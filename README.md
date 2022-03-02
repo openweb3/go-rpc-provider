@@ -1,2 +1,2 @@
 # go-rpc-provider
-json rpc provider for golang
+Json rpc provider for golang
