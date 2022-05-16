@@ -11,3 +11,4 @@ Features
 -   Add client pointer to context when new rpc connection for tracing.
 -   Add http request in RPC context in fucntion `ServeHTTP` for tracing.
 -   Support variadic arguments for rpc service
+-   Add provider wraaper for convinent extension
