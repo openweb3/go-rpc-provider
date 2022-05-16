@@ -24,3 +24,12 @@ func NewBaseProvider(ctx context.Context, nodeUrl string, maxConnectionNum ...in
 	}
 	return rpc.DialContext(ctx, nodeUrl)
 }
+
+// MustNewBaseProvider returns a new BaseProvider. Panic if error.
+func MustNewBaseProvider(ctx context.Context, nodeUrl string, maxConnectionNum ...int) interfaces.Provider {
+	p, err := NewBaseProvider(ctx, nodeUrl, maxConnectionNum...)
+	if err != nil {
+		panic(err)
+	}
+	return p
+}
