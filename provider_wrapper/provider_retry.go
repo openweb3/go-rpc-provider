@@ -76,13 +76,14 @@ func retry(maxRetry int, interval time.Duration, handler func() error) error {
 			return err
 		}
 
-		remain--
-		if remain == 0 {
+		if remain <= 0 {
 			return errors.Wrapf(err, "failed after %v retries", maxRetry)
 		}
 
 		if interval > 0 {
 			time.Sleep(interval)
 		}
+
+		remain--
 	}
 }
