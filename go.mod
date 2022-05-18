@@ -10,4 +10,5 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/valyala/fasthttp v1.33.0
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce
+	gotest.tools v2.2.0+incompatible
 )
