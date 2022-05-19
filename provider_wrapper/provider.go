@@ -19,6 +19,17 @@ type Option struct {
 	MaxConnectionNum int
 }
 
+func (o *Option) WithRetry(retryCount int, retryInterval time.Duration) *Option {
+	o.RetryCount = retryCount
+	o.RetryInterval = retryInterval
+	return o
+}
+
+func (o *Option) WithTimout(requestTimeout time.Duration) *Option {
+	o.RequestTimeout = requestTimeout
+	return o
+}
+
 func NewProviderWithOption(rawurl string, option *Option) (interfaces.Provider, error) {
 	maxConn := 0
 	if option != nil {
