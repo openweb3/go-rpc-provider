@@ -8,6 +8,7 @@ import (
 	"github.com/openweb3/go-rpc-provider/interfaces"
 )
 
+// Option for set retry and timeout options
 type Option struct {
 	// KeystorePath string
 	// retry
