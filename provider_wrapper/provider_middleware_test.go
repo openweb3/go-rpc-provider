@@ -14,6 +14,7 @@ import (
 var executeStack []byte = make([]byte, 0)
 
 func TestHookCall(t *testing.T) {
+	executeStack = make([]byte, 0)
 	p, e := rpc.DialContext(context.Background(), "http://localhost:8545")
 	if e != nil {
 		t.Fatal(e)
@@ -65,6 +66,7 @@ func callMiddle3(f CallFunc) CallFunc {
 }
 
 func TestHookCallContext(t *testing.T) {
+	executeStack = make([]byte, 0)
 	p, e := rpc.DialContext(context.Background(), "http://localhost:8545")
 	if e != nil {
 		t.Fatal(e)
