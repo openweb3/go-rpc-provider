@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/mcuadros/go-defaults"
-	"github.com/openweb3/go-rpc-provider/interfaces"
 )
 
 // Option for set retry and timeout options
@@ -31,7 +30,7 @@ func (o *Option) WithTimout(requestTimeout time.Duration) *Option {
 	return o
 }
 
-func NewProviderWithOption(rawurl string, option *Option) (interfaces.Provider, error) {
+func NewProviderWithOption(rawurl string, option *Option) (*MiddlewarableProvider, error) {
 	maxConn := 0
 	if option != nil {
 		maxConn = option.MaxConnectionNum
@@ -52,7 +51,7 @@ func NewProviderWithOption(rawurl string, option *Option) (interfaces.Provider, 
 }
 
 // wrapProvider wrap provider accroding to option
-func wrapProvider(p interfaces.Provider, option *Option) interfaces.Provider {
+func wrapProvider(p *MiddlewarableProvider, option *Option) *MiddlewarableProvider {
 	if option == nil {
 		return p
 	}

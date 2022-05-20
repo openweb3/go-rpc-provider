@@ -13,7 +13,7 @@ type TimeoutableProvider struct {
 	MiddlewarableProvider
 }
 
-func NewTimeoutableProvider(inner interfaces.Provider, timeout time.Duration) *TimeoutableProvider {
+func NewTimeoutableProvider(inner interfaces.Provider, timeout time.Duration) *MiddlewarableProvider {
 	m := NewMiddlewarableProvider(inner)
 	timeoutMiddle := TimeoutMiddleware{Timeout: timeout}
 
@@ -21,7 +21,7 @@ func NewTimeoutableProvider(inner interfaces.Provider, timeout time.Duration) *T
 	m.HookBatchCallContext(timeoutMiddle.BatchCallContext)
 	m.HookSubscribe(timeoutMiddle.Subscribe)
 
-	return &TimeoutableProvider{*m}
+	return m
 }
 
 func (p *TimeoutableProvider) Call(resultPtr interface{}, method string, args ...interface{}) error {

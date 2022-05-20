@@ -10,25 +10,23 @@ import (
 	"github.com/pkg/errors"
 )
 
-type RetriableProvider struct {
-	MiddlewarableProvider
+func NewRetriableProvider(inner interfaces.Provider, maxRetry int, interval time.Duration) *MiddlewarableProvider {
+	m := NewMiddlewarableProvider(inner)
 
+	r := &RetriableMiddleware{maxRetry, interval}
+	m.HookCall(r.callMiddleware)
+	m.HookCallContext(r.callContextMiddleware)
+	m.HookBatchCall(r.batchCallMiddleware)
+	m.HookBatchCallContext(r.batchCallContextMiddleware)
+	return m
+}
+
+type RetriableMiddleware struct {
 	maxRetry int
 	interval time.Duration
 }
 
-func NewRetriableProvider(inner interfaces.Provider, maxRetry int, interval time.Duration) *RetriableProvider {
-	m := NewMiddlewarableProvider(inner)
-
-	r := &RetriableProvider{*m, maxRetry, interval}
-	r.HookCall(r.callMiddleware)
-	r.HookCallContext(r.callContextMiddleware)
-	r.HookBatchCall(r.batchCallMiddleware)
-	r.HookBatchCallContext(r.batchCallContextMiddleware)
-	return r
-}
-
-func (r *RetriableProvider) callMiddleware(call CallFunc) CallFunc {
+func (r *RetriableMiddleware) callMiddleware(call CallFunc) CallFunc {
 	return func(resultPtr interface{}, method string, args ...interface{}) error {
 		handler := func() error {
 			return call(resultPtr, method, args...)
@@ -37,7 +35,7 @@ func (r *RetriableProvider) callMiddleware(call CallFunc) CallFunc {
 	}
 }
 
-func (r *RetriableProvider) callContextMiddleware(call CallContextFunc) CallContextFunc {
+func (r *RetriableMiddleware) callContextMiddleware(call CallContextFunc) CallContextFunc {
 	return func(ctx context.Context, resultPtr interface{}, method string, args ...interface{}) error {
 		handler := func() error {
 			return call(ctx, resultPtr, method, args...)
@@ -46,7 +44,7 @@ func (r *RetriableProvider) callContextMiddleware(call CallContextFunc) CallCont
 	}
 }
 
-func (r *RetriableProvider) batchCallMiddleware(call BatchCallFunc) BatchCallFunc {
+func (r *RetriableMiddleware) batchCallMiddleware(call BatchCallFunc) BatchCallFunc {
 	return func(b []rpc.BatchElem) error {
 		handler := func() error {
 			return call(b)
@@ -55,7 +53,7 @@ func (r *RetriableProvider) batchCallMiddleware(call BatchCallFunc) BatchCallFun
 	}
 }
 
-func (r *RetriableProvider) batchCallContextMiddleware(call BatchCallContextFunc) BatchCallContextFunc {
+func (r *RetriableMiddleware) batchCallContextMiddleware(call BatchCallContextFunc) BatchCallContextFunc {
 	return func(ctx context.Context, b []rpc.BatchElem) error {
 		handler := func() error {
 			return call(ctx, b)

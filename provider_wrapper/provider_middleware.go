@@ -23,7 +23,14 @@ type MiddlewarableProvider struct {
 }
 
 func NewMiddlewarableProvider(p interfaces.Provider) *MiddlewarableProvider {
-	return &MiddlewarableProvider{Inner: p}
+	m := &MiddlewarableProvider{Inner: p,
+		callNestedWare:             p.Call,
+		callContextNestedWare:      p.CallContext,
+		batchcallNestedWare:        p.BatchCall,
+		batchcallContextNestedWare: p.BatchCallContext,
+		subscribeNestedWare:        p.Subscribe,
+	}
+	return m
 }
 
 type CallFunc func(resultPtr interface{}, method string, args ...interface{}) error
