@@ -38,23 +38,14 @@ func (o *Option) WithMaxConnectionPerHost(maxConnectionPerHost int) *Option {
 
 // NewProviderWithOption returns a new MiddlewareProvider with hook handlers build according to options
 // Note: user could overwrite RequestTimeout when CallContext with timeout context or cancel context
-func NewProviderWithOption(rawurl string, option *Option) (*MiddlewarableProvider, error) {
-	maxConn := 0
-	if option != nil {
-		maxConn = option.MaxConnectionPerHost
-	}
-
-	p, err := NewBaseProvider(context.Background(), rawurl, maxConn)
+func NewProviderWithOption(rawurl string, option Option) (*MiddlewarableProvider, error) {
+	p, err := NewBaseProvider(context.Background(), rawurl, option.MaxConnectionPerHost)
 	if err != nil {
 		return nil, err
 	}
 
-	if option == nil {
-		option = &Option{}
-	}
-
 	defaults.SetDefaults(option)
-	p = wrapProvider(p, *option)
+	p = wrapProvider(p, option)
 	return p, nil
 }
 
