@@ -8,6 +8,7 @@ import (
 )
 
 // Option for set retry and timeout options
+// Note: user could overwrite RequestTimeout when CallContext with timeout context or cancel context
 type Option struct {
 	// KeystorePath string
 	// retry
@@ -35,6 +36,8 @@ func (o *Option) WithMaxConnectionPerHost(maxConnectionPerHost int) *Option {
 	return o
 }
 
+// NewProviderWithOption returns a new MiddlewareProvider with hook handlers build according to options
+// Note: user could overwrite RequestTimeout when CallContext with timeout context or cancel context
 func NewProviderWithOption(rawurl string, option *Option) (*MiddlewarableProvider, error) {
 	maxConn := 0
 	if option != nil {
