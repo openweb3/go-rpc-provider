@@ -16,7 +16,7 @@ type Option struct {
 	// timeout of request
 	RequestTimeout time.Duration `default:"3s"`
 	// Maximum number of connections may be established. The default value is 512.
-	MaxConnectionNum int
+	MaxConnectionPerHost int
 }
 
 func (o *Option) WithRetry(retryCount int, retryInterval time.Duration) *Option {
@@ -30,10 +30,15 @@ func (o *Option) WithTimout(requestTimeout time.Duration) *Option {
 	return o
 }
 
+func (o *Option) WithMaxConnectionPerHost(maxConnectionPerHost int) *Option {
+	o.MaxConnectionPerHost = maxConnectionPerHost
+	return o
+}
+
 func NewProviderWithOption(rawurl string, option *Option) (*MiddlewarableProvider, error) {
 	maxConn := 0
 	if option != nil {
-		maxConn = option.MaxConnectionNum
+		maxConn = option.MaxConnectionPerHost
 	}
 
 	p, err := NewBaseProvider(context.Background(), rawurl, maxConn)
@@ -46,16 +51,12 @@ func NewProviderWithOption(rawurl string, option *Option) (*MiddlewarableProvide
 	}
 
 	defaults.SetDefaults(option)
-	p = wrapProvider(p, option)
+	p = wrapProvider(p, *option)
 	return p, nil
 }
 
 // wrapProvider wrap provider accroding to option
-func wrapProvider(p *MiddlewarableProvider, option *Option) *MiddlewarableProvider {
-	if option == nil {
-		return p
-	}
-
+func wrapProvider(p *MiddlewarableProvider, option Option) *MiddlewarableProvider {
 	p = NewTimeoutableProvider(p, option.RequestTimeout)
 	p = NewRetriableProvider(p, option.RetryCount, option.RetryInterval)
 	return p

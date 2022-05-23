@@ -24,13 +24,13 @@ func NewTimeoutableProvider(inner interfaces.Provider, timeout time.Duration) *M
 	return m
 }
 
-func (p *TimeoutableProvider) Call(resultPtr interface{}, method string, args ...interface{}) error {
-	return p.CallContext(context.Background(), resultPtr, method, args...)
-}
+// func (p *TimeoutableProvider) Call(resultPtr interface{}, method string, args ...interface{}) error {
+// 	return p.CallContext(context.Background(), resultPtr, method, args...)
+// }
 
-func (p *TimeoutableProvider) BatchCall(b []rpc.BatchElem) error {
-	return p.BatchCallContext(context.Background(), b)
-}
+// func (p *TimeoutableProvider) BatchCall(b []rpc.BatchElem) error {
+// 	return p.BatchCallContext(context.Background(), b)
+// }
 
 type TimeoutMiddleware struct {
 	Timeout time.Duration
