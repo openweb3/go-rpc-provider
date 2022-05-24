@@ -44,7 +44,7 @@ func NewProviderWithOption(rawurl string, option Option) (*MiddlewarableProvider
 		return nil, err
 	}
 
-	defaults.SetDefaults(option)
+	defaults.SetDefaults(&option)
 	p = wrapProvider(p, option)
 	return p, nil
 }
