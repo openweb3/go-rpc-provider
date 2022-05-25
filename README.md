@@ -43,7 +43,7 @@ you can create MiddlewarableProvider by NewMiddlewarableProvider and pass the pr
 	mp.HookCallContext(otherMiddleware)
 ```
 
-the callLogMiddleware is like
+the callContextLogMiddleware is like
 ```golang
 func callContextLogMiddleware(f providers.CallFunc) providers.CallFunc {
 	return func(ctx context.Context, resultPtr interface{}, method string, args ...interface{}) error {
