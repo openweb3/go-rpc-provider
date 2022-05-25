@@ -20,9 +20,11 @@ type LogMiddleware struct {
 
 func NewLoggerProvider(p interfaces.Provider, w io.Writer) *MiddlewarableProvider {
 	mp := NewMiddlewarableProvider(p)
-	logMiddleware := &LogMiddleware{Writer: w}
-	mp.HookCallContext(logMiddleware.callContextMiddleware)
-	mp.HookBatchCallContext(logMiddleware.batchCallContextMiddleware)
+	if w != nil {
+		logMiddleware := &LogMiddleware{Writer: w}
+		mp.HookCallContext(logMiddleware.callContextMiddleware)
+		mp.HookBatchCallContext(logMiddleware.batchCallContextMiddleware)
+	}
 	return mp
 }
 
