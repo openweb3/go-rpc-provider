@@ -12,7 +12,7 @@ import (
 // Note: user could overwrite RequestTimeout when CallContext with timeout context or cancel context
 type Option struct {
 	// retry
-	RetryCount    int           `default:"3"`
+	RetryCount    int
 	RetryInterval time.Duration `default:"1s"`
 	// timeout of request
 	RequestTimeout time.Duration `default:"30s"`
