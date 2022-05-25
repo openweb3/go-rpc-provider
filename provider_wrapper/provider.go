@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/mcuadros/go-defaults"
@@ -10,14 +11,14 @@ import (
 // Option for set retry and timeout options
 // Note: user could overwrite RequestTimeout when CallContext with timeout context or cancel context
 type Option struct {
-	// KeystorePath string
 	// retry
 	RetryCount    int           `default:"3"`
 	RetryInterval time.Duration `default:"1s"`
 	// timeout of request
-	RequestTimeout time.Duration `default:"3s"`
+	RequestTimeout time.Duration `default:"30s"`
 	// Maximum number of connections may be established. The default value is 512.
 	MaxConnectionPerHost int
+	Logger               io.Writer
 }
 
 func (o *Option) WithRetry(retryCount int, retryInterval time.Duration) *Option {
@@ -33,6 +34,11 @@ func (o *Option) WithTimout(requestTimeout time.Duration) *Option {
 
 func (o *Option) WithMaxConnectionPerHost(maxConnectionPerHost int) *Option {
 	o.MaxConnectionPerHost = maxConnectionPerHost
+	return o
+}
+
+func (o *Option) WithLooger(w io.Writer) *Option {
+	o.Logger = w
 	return o
 }
 
@@ -53,5 +59,6 @@ func NewProviderWithOption(rawurl string, option Option) (*MiddlewarableProvider
 func wrapProvider(p *MiddlewarableProvider, option Option) *MiddlewarableProvider {
 	p = NewTimeoutableProvider(p, option.RequestTimeout)
 	p = NewRetriableProvider(p, option.RetryCount, option.RetryInterval)
+	p = NewLoggerProvider(p, option.Logger)
 	return p
 }
