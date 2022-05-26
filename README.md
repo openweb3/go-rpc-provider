@@ -12,8 +12,11 @@ Features
 -   Add HTTP request in RPC context in function `ServeHTTP` for tracing.
 -   Support variadic arguments for RPC service
 -   Add provider wrapper for convenient extension
-
-
+-   Support MiddlewarableProvider to extend provider features, currently support 
+    -   `NewRetriableProvider` to create MiddlewarableProvider instance with auto-retry when failing
+    -   `NewTimeoutableProvider` to create MiddlewarableProvider instance with timeout when CallContext/BatchCallContext
+    -   `NewLoggerProvider` to create MiddlewarableProvider instance for logging request/response when CallContext/BatchCallContext
+    -   `NewProviderWithOption` to create MiddlewarableProvider instance includes all features of `NewRetriableProvider`, `NewTimeoutableProvider` and `NewLoggerProvider`
 
 
 Usage
@@ -45,7 +48,7 @@ you can create MiddlewarableProvider by NewMiddlewarableProvider and pass the pr
 
 the callContextLogMiddleware is like
 ```golang
-func callContextLogMiddleware(f providers.CallFunc) providers.CallFunc {
+func callContextLogMiddleware(f providers.CallContextFunc) providers.CallContextFunc {
 	return func(ctx context.Context, resultPtr interface{}, method string, args ...interface{}) error {
 		fmt.Printf("request %v %v\n", method, args)
 		err := f(ctx, resultPtr, method, args...)
@@ -58,7 +61,7 @@ func callContextLogMiddleware(f providers.CallFunc) providers.CallFunc {
 
 The simplest way to create middlewarable provider is by `providers.NewBaseProvider`.  It will create a MiddlewareProvider and it could set the max connection number for client with the server.
 
-For example, create by `providers.NewBaseProvider` and use the logging middleware created below to hook by HookCallContext
+For example, created by `providers`.NewBaseProvider` and use the logging middleware created below to hook by HookCallContext
 ```golang
 	p, e := warpper.NewBaseProvider(context.Background(), "http://localhost:8545")
 	if e != nil {
