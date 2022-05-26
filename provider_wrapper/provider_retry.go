@@ -14,9 +14,7 @@ func NewRetriableProvider(inner interfaces.Provider, maxRetry int, interval time
 	m := NewMiddlewarableProvider(inner)
 
 	r := &RetriableMiddleware{maxRetry, interval}
-	// m.HookCall(r.callMiddleware)
 	m.HookCallContext(r.callContextMiddleware)
-	// m.HookBatchCall(r.batchCallMiddleware)
 	m.HookBatchCallContext(r.batchCallContextMiddleware)
 	return m
 }
@@ -26,15 +24,6 @@ type RetriableMiddleware struct {
 	interval time.Duration
 }
 
-// func (r *RetriableMiddleware) callMiddleware(call CallFunc) CallFunc {
-// 	return func(resultPtr interface{}, method string, args ...interface{}) error {
-// 		handler := func() error {
-// 			return call(resultPtr, method, args...)
-// 		}
-// 		return retry(r.maxRetry, r.interval, handler)
-// 	}
-// }
-
 func (r *RetriableMiddleware) callContextMiddleware(call CallContextFunc) CallContextFunc {
 	return func(ctx context.Context, resultPtr interface{}, method string, args ...interface{}) error {
 		handler := func() error {
@@ -43,15 +32,6 @@ func (r *RetriableMiddleware) callContextMiddleware(call CallContextFunc) CallCo
 		return retry(r.maxRetry, r.interval, handler)
 	}
 }
-
-// func (r *RetriableMiddleware) batchCallMiddleware(call BatchCallFunc) BatchCallFunc {
-// 	return func(b []rpc.BatchElem) error {
-// 		handler := func() error {
-// 			return call(b)
-// 		}
-// 		return retry(r.maxRetry, r.interval, handler)
-// 	}
-// }
 
 func (r *RetriableMiddleware) batchCallContextMiddleware(call BatchCallContextFunc) BatchCallContextFunc {
 	return func(ctx context.Context, b []rpc.BatchElem) error {

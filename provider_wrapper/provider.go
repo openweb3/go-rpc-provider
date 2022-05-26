@@ -14,9 +14,9 @@ type Option struct {
 	// retry
 	RetryCount    int
 	RetryInterval time.Duration `default:"1s"`
-	// timeout of request
+
 	RequestTimeout time.Duration `default:"30s"`
-	// Maximum number of connections may be established. The default value is 512.
+
 	MaxConnectionPerHost int
 	Logger               io.Writer
 }
