@@ -23,6 +23,10 @@ type MiddlewarableProvider struct {
 }
 
 func NewMiddlewarableProvider(p interfaces.Provider) *MiddlewarableProvider {
+	if _, ok := p.(*MiddlewarableProvider); ok {
+		return p.(*MiddlewarableProvider)
+	}
+
 	m := &MiddlewarableProvider{Inner: p,
 		// callNestedWare:             p.Call,
 		callContextNestedWare: p.CallContext,
