@@ -64,6 +64,11 @@ type handler struct {
 
 	subLock    sync.Mutex
 	serverSubs map[ID]*Subscription
+
+	handleMsgNestedware      HandleMsgFunc
+	handleMsgMiddlewareLen   int
+	handleBatchNestedWare    HandleBatchFunc
+	handleBatchMiddlewareLen int
 }
 
 type callProc struct {
@@ -72,7 +77,9 @@ type callProc struct {
 }
 
 func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *serviceRegistry) *handler {
+	// fmt.Println("new handler")
 	rootCtx, cancelRoot := context.WithCancel(connCtx)
+	rootCtx = onNewHandlerNestedWare(rootCtx)
 	h := &handler{
 		reg:            reg,
 		idgen:          idgen,
@@ -92,14 +99,19 @@ func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *
 	return h
 }
 
-// handleBatch executes all messages in a batch and returns the responses.
 func (h *handler) handleBatch(msgs []*jsonrpcMessage) {
+	nestedFunc := h.getHandleBatchNestedware()
+	nestedFunc(msgs)
+}
+
+// handleBatch executes all messages in a batch and returns the responses.
+func (h *handler) handleBatchCore(msgs []*jsonrpcMessage) <-chan []*JsonRpcMessage {
 	// Emit error response for empty batches:
 	if len(msgs) == 0 {
 		h.startCallProc(func(cp *callProc) {
 			h.conn.writeJSON(cp.ctx, errorMessage(&invalidRequestError{"empty batch"}))
 		})
-		return
+		return nil
 	}
 
 	// Handle non-call messages first:
@@ -110,11 +122,18 @@ func (h *handler) handleBatch(msgs []*jsonrpcMessage) {
 		}
 	}
 	if len(calls) == 0 {
-		return
+		return nil
 	}
+
+	// pass result to channel beacuse the process is goroutine
+	msgsC := make(chan []*JsonRpcMessage)
+
 	// Process calls on a goroutine because they may block indefinitely:
 	h.startCallProc(func(cp *callProc) {
 		answers := make([]*jsonrpcMessage, 0, len(msgs))
+		msgsC <- answers
+		close(msgsC)
+
 		for _, msg := range calls {
 			if answer := h.handleCallMsg(cp, msg); answer != nil {
 				answers = append(answers, answer)
@@ -128,15 +147,28 @@ func (h *handler) handleBatch(msgs []*jsonrpcMessage) {
 			n.activate()
 		}
 	})
+	return msgsC
+}
+
+func (h *handler) handleMsg(msg *jsonrpcMessage) {
+	nestedFunc := h.getHandleMsgNestedware()
+	nestedFunc(msg)
 }
 
 // handleMsg handles a single message.
-func (h *handler) handleMsg(msg *jsonrpcMessage) {
+func (h *handler) handleMsgCore(msg *jsonrpcMessage) <-chan *JsonRpcMessage {
 	if ok := h.handleImmediate(msg); ok {
-		return
+		return nil
 	}
+
+	// pass result to channel beacuse the process is goroutine
+	msgC := make(chan *JsonRpcMessage)
+
 	h.startCallProc(func(cp *callProc) {
 		answer := h.handleCallMsg(cp, msg)
+		msgC <- answer
+		close(msgC)
+
 		h.addSubscriptions(cp.notifiers)
 		if answer != nil {
 			h.conn.writeJSON(cp.ctx, answer)
@@ -145,6 +177,7 @@ func (h *handler) handleMsg(msg *jsonrpcMessage) {
 			n.activate()
 		}
 	})
+	return msgC
 }
 
 // close cancels all requests except for inflightReq and waits for
