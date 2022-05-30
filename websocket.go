@@ -58,7 +58,7 @@ func (s *Server) WebsocketHandler(allowedOrigins []string) http.Handler {
 		codec := newWebsocketCodec(conn)
 		s.ServeCodec(codec, 0)
 	})
-	return s.genHttpHandlerNestedWare(core)
+	return s.genWebsocketHandlerNestedWare(core)
 }
 
 // wsHandshakeValidator returns a handler that verifies the origin during the
