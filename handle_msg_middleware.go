@@ -56,11 +56,3 @@ func (h *handler) getHandleMsgNestedware() HandleMsgFunc {
 	}
 	return h.handleMsgNestedware
 }
-
-// func handleMsgMid(next HandleMsgFunc) HandleMsgFunc {
-// 	return func(msg *jsonrpcMessage) *JsonRpcMessage {
-// 		// do sth pre
-// 		return next(msg)
-// 		// do sth post
-// 	}
-// }
