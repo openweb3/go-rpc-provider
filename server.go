@@ -47,8 +47,6 @@ type Server struct {
 	run      int32
 	codecs   mapset.Set
 
-	serveHTTPMiddlewares     []HandlerFuncMiddleware
-	serveWebsocktMiddlewares []HandlerFuncMiddleware
 	// serveHTTPNestedWare      ServeHTTPFunc
 	// serveWebsocketNestedWare http.HandlerFunc
 }
@@ -97,7 +95,6 @@ func (s *Server) ServeCodec(codec ServerCodec, options CodecOption) {
 // is used to serve HTTP connections. Subscriptions and reverse calls are not allowed in
 // this mode.
 func (s *Server) serveSingleRequest(ctx context.Context, codec ServerCodec) {
-	// fmt.Println("serveSingleRequest")
 	// Don't serve if server is stopped.
 	if atomic.LoadInt32(&s.run) == 0 {
 		return

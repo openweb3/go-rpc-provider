@@ -65,8 +65,6 @@ type handler struct {
 	subLock    sync.Mutex
 	serverSubs map[ID]*Subscription
 
-	handleMsgNestedware      HandleMsgFunc
-	handleMsgMiddlewareLen   int
 	handleBatchNestedWare    HandleBatchFunc
 	handleBatchMiddlewareLen int
 }
@@ -77,9 +75,7 @@ type callProc struct {
 }
 
 func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *serviceRegistry) *handler {
-	// fmt.Println("new handler")
 	rootCtx, cancelRoot := context.WithCancel(connCtx)
-	rootCtx = onNewHandlerNestedWare(rootCtx)
 	h := &handler{
 		reg:            reg,
 		idgen:          idgen,
@@ -152,13 +148,8 @@ func (h *handler) handleBatchCore(ctx context.Context, msgs []*jsonrpcMessage) <
 	return msgsC
 }
 
-func (h *handler) handleMsg(msg *jsonrpcMessage) {
-	nestedFunc := h.getHandleMsgNestedware()
-	nestedFunc(msg)
-}
-
 // handleMsg handles a single message.
-func (h *handler) handleMsgCore(msg *jsonrpcMessage) <-chan *JsonRpcMessage {
+func (h *handler) handleMsg(msg *jsonrpcMessage) <-chan *JsonRpcMessage {
 	if ok := h.handleImmediate(msg); ok {
 		return nil
 	}

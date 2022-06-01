@@ -49,7 +49,7 @@ func (s *Server) WebsocketHandler(allowedOrigins []string) http.Handler {
 		WriteBufferPool: wsBufferPool,
 		CheckOrigin:     wsHandshakeValidator(allowedOrigins),
 	}
-	core := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Debug("WebSocket upgrade failed", "err", err)
@@ -59,7 +59,6 @@ func (s *Server) WebsocketHandler(allowedOrigins []string) http.Handler {
 		codecWithCtx := ServerCodecWithContext{codec, r.Context()}
 		s.ServeCodec(codecWithCtx, 0)
 	})
-	return s.genWebsocketHandlerNestedWare(core)
 }
 
 // wsHandshakeValidator returns a handler that verifies the origin during the

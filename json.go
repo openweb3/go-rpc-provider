@@ -221,9 +221,6 @@ func (c *jsonCodec) readBatch() (msg []*jsonrpcMessage, batch bool, err error) {
 }
 
 func (c *jsonCodec) writeJSON(ctx context.Context, v interface{}) error {
-
-	// debug.PrintStack()
-	// fmt.Println("writeJSON")
 	c.encMu.Lock()
 	defer c.encMu.Unlock()
 
