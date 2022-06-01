@@ -131,14 +131,16 @@ func (h *handler) handleBatchCore(ctx context.Context, msgs []*jsonrpcMessage) <
 	// Process calls on a goroutine because they may block indefinitely:
 	h.startCallProc(ctx, func(cp *callProc) {
 		answers := make([]*jsonrpcMessage, 0, len(msgs))
-		msgsC <- answers
-		close(msgsC)
 
 		for _, msg := range calls {
 			if answer := h.handleCallMsg(cp, msg); answer != nil {
 				answers = append(answers, answer)
 			}
 		}
+
+		msgsC <- answers
+		close(msgsC)
+
 		h.addSubscriptions(cp.notifiers)
 		if len(answers) > 0 {
 			h.conn.writeJSON(cp.ctx, answers)
