@@ -75,8 +75,6 @@ However, we also apply several functions to create kinds of instances of Middlew
 The functions are `providers.NewTimeoutableProvider`, `providers.NewRetriableProvider`. 
 
 And the simplest way to create NewMiddlewarableProvider with retry and timeout features is to use `providers.NewProviderWithOption`
-<<<<<<< Updated upstream
-=======
 
 
 Server
@@ -112,4 +110,3 @@ Both `rpc.HookHandleMsg` and `rpc.HookHandleBatch` are globally effective, it wi
 		}
 	})
 ```
->>>>>>> Stashed changes
