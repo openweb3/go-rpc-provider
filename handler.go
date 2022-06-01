@@ -149,18 +149,13 @@ func (h *handler) handleBatchCore(ctx context.Context, msgs []*jsonrpcMessage) <
 }
 
 // handleMsg handles a single message.
-func (h *handler) handleMsg(msg *jsonrpcMessage) <-chan *JsonRpcMessage {
+func (h *handler) handleMsg(msg *jsonrpcMessage) {
 	if ok := h.handleImmediate(msg); ok {
-		return nil
+		return
 	}
-
-	// pass result to channel beacuse the process is goroutine
-	msgC := make(chan *JsonRpcMessage)
 
 	h.startCallProc(h.rootCtx, func(cp *callProc) {
 		answer := h.handleCallMsg(cp, msg)
-		msgC <- answer
-		close(msgC)
 
 		h.addSubscriptions(cp.notifiers)
 		if answer != nil {
@@ -170,7 +165,7 @@ func (h *handler) handleMsg(msg *jsonrpcMessage) <-chan *JsonRpcMessage {
 			n.activate()
 		}
 	})
-	return msgC
+
 }
 
 // close cancels all requests except for inflightReq and waits for
