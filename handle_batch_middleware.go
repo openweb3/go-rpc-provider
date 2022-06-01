@@ -1,6 +1,8 @@
 package rpc
 
-type HandleBatchFunc func(msgs []*jsonrpcMessage) []*JsonRpcMessage
+import "context"
+
+type HandleBatchFunc func(ctx context.Context, msgs []*jsonrpcMessage) []*JsonRpcMessage
 type HandleBatchMiddleware func(next HandleBatchFunc) HandleBatchFunc
 
 var (
@@ -15,8 +17,8 @@ func HookHandleBatch(middleware HandleBatchMiddleware) {
 func (h *handler) getHandleBatchNestedware() HandleBatchFunc {
 	if h.handleBatchNestedWare == nil || h.handleBatchMiddlewareLen != len(handleBatchFuncMiddlewares) {
 		h.handleBatchMiddlewareLen = len(handleBatchFuncMiddlewares)
-		nestedWare := func(msgs []*jsonrpcMessage) []*JsonRpcMessage {
-			c := h.handleBatchCore(msgs)
+		nestedWare := func(ctx context.Context, msgs []*jsonrpcMessage) []*JsonRpcMessage {
+			c := h.handleBatchCore(ctx, msgs)
 			if c == nil {
 				return nil
 			}

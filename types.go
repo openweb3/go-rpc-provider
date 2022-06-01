@@ -50,6 +50,11 @@ type ServerCodec interface {
 	jsonWriter
 }
 
+type ServerCodecWithContext struct {
+	ServerCodec
+	ctx context.Context
+}
+
 // jsonWriter can write JSON messages to its underlying connection.
 // Implementations must be safe for concurrent use.
 type jsonWriter interface {

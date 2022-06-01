@@ -56,7 +56,8 @@ func (s *Server) WebsocketHandler(allowedOrigins []string) http.Handler {
 			return
 		}
 		codec := newWebsocketCodec(conn)
-		s.ServeCodec(codec, 0)
+		codecWithCtx := ServerCodecWithContext{codec, r.Context()}
+		s.ServeCodec(codecWithCtx, 0)
 	})
 	return s.genWebsocketHandlerNestedWare(core)
 }
