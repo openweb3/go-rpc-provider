@@ -1,6 +1,9 @@
 package rpc
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 type HandleBatchFunc func(ctx context.Context, msgs []*jsonrpcMessage) []*JsonRpcMessage
 type HandleBatchMiddleware func(next HandleBatchFunc) HandleBatchFunc
@@ -23,6 +26,7 @@ func (h *handler) getHandleBatchNestedware() HandleBatchFunc {
 				return nil
 			}
 			result := <-c
+			fmt.Printf("receive batch result from channel %v\n", result)
 			return result
 		}
 		// fmt.Printf("len(handleBatchFuncMiddlewares) %v\n", len(handleBatchFuncMiddlewares))
