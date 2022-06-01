@@ -110,7 +110,13 @@ type clientConn struct {
 }
 
 func (c *Client) newClientConn(conn ServerCodec) *clientConn {
-	ctx := context.WithValue(context.Background(), clientContextKey{}, c)
+
+	ctx := context.Background()
+	if connwrap, ok := conn.(ServerCodecWithContext); ok {
+		ctx = connwrap.ctx
+	}
+
+	ctx = context.WithValue(ctx, clientContextKey{}, c)
 	// add websocket remote address to the context
 	ctx = context.WithValue(ctx, "remote", conn.remoteAddr())
 	// add rpc client to the context
@@ -307,7 +313,6 @@ func (c *Client) CallContext(ctx context.Context, result interface{}, method str
 	case len(resp.Result) == 0:
 		return ErrNoResult
 	default:
-		// fmt.Printf("resp:%v\n", resp)
 		return json.Unmarshal(resp.Result, &result)
 	}
 }

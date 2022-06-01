@@ -65,8 +65,6 @@ type handler struct {
 	subLock    sync.Mutex
 	serverSubs map[ID]*Subscription
 
-	handleMsgNestedware      HandleMsgFunc
-	handleMsgMiddlewareLen   int
 	handleBatchNestedWare    HandleBatchFunc
 	handleBatchMiddlewareLen int
 }
@@ -77,9 +75,7 @@ type callProc struct {
 }
 
 func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *serviceRegistry) *handler {
-	// fmt.Println("new handler")
 	rootCtx, cancelRoot := context.WithCancel(connCtx)
-	rootCtx = onNewHandlerNestedWare(rootCtx)
 	h := &handler{
 		reg:            reg,
 		idgen:          idgen,
@@ -101,14 +97,14 @@ func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *
 
 func (h *handler) handleBatch(msgs []*jsonrpcMessage) {
 	nestedFunc := h.getHandleBatchNestedware()
-	nestedFunc(msgs)
+	nestedFunc(h.rootCtx, msgs)
 }
 
 // handleBatch executes all messages in a batch and returns the responses.
-func (h *handler) handleBatchCore(msgs []*jsonrpcMessage) <-chan []*JsonRpcMessage {
+func (h *handler) handleBatchCore(ctx context.Context, msgs []*jsonrpcMessage) <-chan []*JsonRpcMessage {
 	// Emit error response for empty batches:
 	if len(msgs) == 0 {
-		h.startCallProc(func(cp *callProc) {
+		h.startCallProc(ctx, func(cp *callProc) {
 			h.conn.writeJSON(cp.ctx, errorMessage(&invalidRequestError{"empty batch"}))
 		})
 		return nil
@@ -129,16 +125,18 @@ func (h *handler) handleBatchCore(msgs []*jsonrpcMessage) <-chan []*JsonRpcMessa
 	msgsC := make(chan []*JsonRpcMessage)
 
 	// Process calls on a goroutine because they may block indefinitely:
-	h.startCallProc(func(cp *callProc) {
+	h.startCallProc(ctx, func(cp *callProc) {
 		answers := make([]*jsonrpcMessage, 0, len(msgs))
-		msgsC <- answers
-		close(msgsC)
 
 		for _, msg := range calls {
 			if answer := h.handleCallMsg(cp, msg); answer != nil {
 				answers = append(answers, answer)
 			}
 		}
+
+		msgsC <- answers
+		close(msgsC)
+
 		h.addSubscriptions(cp.notifiers)
 		if len(answers) > 0 {
 			h.conn.writeJSON(cp.ctx, answers)
@@ -150,13 +148,8 @@ func (h *handler) handleBatchCore(msgs []*jsonrpcMessage) <-chan []*JsonRpcMessa
 	return msgsC
 }
 
-func (h *handler) handleMsg(msg *jsonrpcMessage) {
-	nestedFunc := h.getHandleMsgNestedware()
-	nestedFunc(msg)
-}
-
 // handleMsg handles a single message.
-func (h *handler) handleMsgCore(msg *jsonrpcMessage) <-chan *JsonRpcMessage {
+func (h *handler) handleMsg(msg *jsonrpcMessage) <-chan *JsonRpcMessage {
 	if ok := h.handleImmediate(msg); ok {
 		return nil
 	}
@@ -164,7 +157,7 @@ func (h *handler) handleMsgCore(msg *jsonrpcMessage) <-chan *JsonRpcMessage {
 	// pass result to channel beacuse the process is goroutine
 	msgC := make(chan *JsonRpcMessage)
 
-	h.startCallProc(func(cp *callProc) {
+	h.startCallProc(h.rootCtx, func(cp *callProc) {
 		answer := h.handleCallMsg(cp, msg)
 		msgC <- answer
 		close(msgC)
@@ -250,10 +243,11 @@ func (h *handler) cancelServerSubscriptions(err error) {
 }
 
 // startCallProc runs fn in a new goroutine and starts tracking it in the h.calls wait group.
-func (h *handler) startCallProc(fn func(*callProc)) {
+func (h *handler) startCallProc(ctx context.Context, fn func(*callProc)) {
 	h.callWG.Add(1)
 	go func() {
-		ctx, cancel := context.WithCancel(h.rootCtx)
+		// ctx, cancel := context.WithCancel(h.rootCtx)
+		ctx, cancel := context.WithCancel(ctx)
 		defer h.callWG.Done()
 		defer cancel()
 		fn(&callProc{ctx: ctx})
@@ -319,8 +313,13 @@ func (h *handler) handleResponse(msg *jsonrpcMessage) {
 	}
 }
 
-// handleCallMsg executes a call message and returns the answer.
 func (h *handler) handleCallMsg(ctx *callProc, msg *jsonrpcMessage) *jsonrpcMessage {
+	nestedFunc := h.getHandleCallMsgNestedware(ctx)
+	return nestedFunc(ctx.ctx, msg)
+}
+
+// handleCallMsg executes a call message and returns the answer.
+func (h *handler) handleCallMsgCore(ctx *callProc, msg *jsonrpcMessage) *jsonrpcMessage {
 	start := time.Now()
 	switch {
 	case msg.isNotification():

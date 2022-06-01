@@ -4,55 +4,25 @@ import "context"
 
 type JsonRpcMessage = jsonrpcMessage
 
-// Handle New Handler
-var (
-	onNewHandlerMiddlewares []NewHandlerMiddleware
-	onNewHandlerNestedWare  SetContextFunc = defaultSetContext
-)
-
-type SetContextFunc func(connCtx context.Context) context.Context
-type NewHandlerMiddleware func(next SetContextFunc) SetContextFunc
-
-func HookContextOnNewHandler(next NewHandlerMiddleware) {
-	onNewHandlerMiddlewares = append(onNewHandlerMiddlewares, next)
-	onNewHandlerNestedWare = defaultSetContext
-	for i := len(onNewHandlerMiddlewares) - 1; i >= 0; i-- {
-		onNewHandlerNestedWare = onNewHandlerMiddlewares[i](onNewHandlerNestedWare)
-	}
-}
-
-func defaultSetContext(connCtx context.Context) context.Context {
-	return connCtx
-}
-
-// Handle Msg Middleware
-
-type HandleMsgFunc func(msg *JsonRpcMessage) *JsonRpcMessage
-type HandleMsgMiddleware func(next HandleMsgFunc) HandleMsgFunc
+// Handle CallMsg Middleware
+type HandleCallMsgFunc func(ctx context.Context, msg *JsonRpcMessage) *JsonRpcMessage
+type HandleCallMsgMiddleware func(next HandleCallMsgFunc) HandleCallMsgFunc
 
 var (
-	handleMsgFuncMiddlewares []HandleMsgMiddleware
+	handleCallMsgFuncMiddlewares []HandleCallMsgMiddleware
 )
 
-func HookHandleMsg(middleware HandleMsgMiddleware) {
-	handleMsgFuncMiddlewares = append(handleMsgFuncMiddlewares, middleware)
+func HookHandleCallMsg(middleware HandleCallMsgMiddleware) {
+	handleCallMsgFuncMiddlewares = append(handleCallMsgFuncMiddlewares, middleware)
 }
 
-func (h *handler) getHandleMsgNestedware() HandleMsgFunc {
-	if h.handleMsgNestedware == nil || h.handleMsgMiddlewareLen != len(handleMsgFuncMiddlewares) {
-		h.handleMsgMiddlewareLen = len(handleMsgFuncMiddlewares)
-		nestedWare := func(msg *jsonrpcMessage) *JsonRpcMessage {
-			c := h.handleMsgCore(msg)
-			if c == nil {
-				return nil
-			}
-			result := <-c
-			return result
-		}
-		for i := len(handleMsgFuncMiddlewares) - 1; i >= 0; i-- {
-			nestedWare = handleMsgFuncMiddlewares[i](nestedWare)
-		}
-		h.handleMsgNestedware = nestedWare
+func (h *handler) getHandleCallMsgNestedware(cp *callProc) HandleCallMsgFunc {
+	nestedWare := func(ctx context.Context, msg *jsonrpcMessage) *JsonRpcMessage {
+		cp.ctx = ctx
+		return h.handleCallMsgCore(cp, msg)
 	}
-	return h.handleMsgNestedware
+	for i := len(handleCallMsgFuncMiddlewares) - 1; i >= 0; i-- {
+		nestedWare = handleCallMsgFuncMiddlewares[i](nestedWare)
+	}
+	return nestedWare
 }

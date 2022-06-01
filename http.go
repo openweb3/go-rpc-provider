@@ -199,7 +199,7 @@ func (hc *httpConn) doRequest(ctx context.Context, msg interface{}) (io.Reader, 
 	if err != nil {
 		return nil, err
 	}
-	// fmt.Printf("do request done req:%+v\n respbody:%#v\n\n", req, resp.Body)
+
 	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
 		return bytes.NewReader(resp.Body()), fmt.Errorf("%v", resp.StatusCode())
 	}
@@ -230,16 +230,9 @@ func (t *httpServerConn) RemoteAddr() string {
 // SetWriteDeadline does nothing and always returns nil.
 func (t *httpServerConn) SetWriteDeadline(time.Time) error { return nil }
 
-// ServeHTTP serves JSON-RPC requests over HTTP and handle with server http middleware
+// serveHTTP serves JSON-RPC requests over HTTP.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	handler := s.genHttpHandlerNestedWare(s.serveHTTPCore)
-	handler(w, r)
-}
-
-// serveHTTPCore serves JSON-RPC requests over HTTP.
-func (s *Server) serveHTTPCore(w http.ResponseWriter, r *http.Request) {
 	// Permit dumb empty requests for remote health-checks (AWS)
-	// fmt.Println("serveHTTPCore")
 	if r.Method == http.MethodGet && r.ContentLength == 0 && r.URL.RawQuery == "" {
 		w.WriteHeader(http.StatusOK)
 		return
