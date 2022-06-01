@@ -75,3 +75,41 @@ However, we also apply several functions to create kinds of instances of Middlew
 The functions are `providers.NewTimeoutableProvider`, `providers.NewRetriableProvider`. 
 
 And the simplest way to create NewMiddlewarableProvider with retry and timeout features is to use `providers.NewProviderWithOption`
+<<<<<<< Updated upstream
+=======
+
+
+Server
+----------
+
+The `rpc` package is extended based on go-ethereum. And we extend RPC server features for hook on handle requests on both "batch call msg" and "call msg".
+
+### Usage
+
+Both `rpc.HookHandleMsg` and `rpc.HookHandleBatch` are globally effective, it will effective to both HTTP and Websocket when hook once.
+
+#### Note:
+- HookHandleCallMsg works when "call msg" and "batch call msg", for example, batch requests `[ jsonrpc_a, jsonrpc_b ]`, it will trigger function nested by `HookHandleBatch` once and function netsed by `HookHandleCallMsg` twice
+- HookHandleBatch works only when "call msg"
+
+```golang
+	rpc.HookHandleCallMsg(func(next rpc.HandleCallMsgFunc) rpc.HandleCallMsgFunc {
+		return func(ctx context.Context, msg *rpc.JsonRpcMessage) *rpc.JsonRpcMessage {
+			fmt.Printf("request call msg %v\n", utils.PrettyJSON(msg))
+			fmt.Printf("callmsg -- request context key of %v value %v\n", "test-k", ctx.Value("test-k"))
+			result := next(ctx, msg)
+			fmt.Printf("response call msg %v\n", utils.PrettyJSON(result))
+			return result
+		}
+	})
+	rpc.HookHandleBatch(func(next rpc.HandleBatchFunc) rpc.HandleBatchFunc {
+		return func(ctx context.Context, msgs []*rpc.JsonRpcMessage) []*rpc.JsonRpcMessage {
+			fmt.Printf("request batch %v\n", utils.PrettyJSON(msgs))
+			fmt.Printf("batch -- request context key of %v value %v\n", "test-k", ctx.Value("test-k"))
+			results := next(ctx, msgs)
+			fmt.Printf("response batch %v\n", utils.PrettyJSON(results))
+			return results
+		}
+	})
+```
+>>>>>>> Stashed changes
