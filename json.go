@@ -124,6 +124,8 @@ func errorMessage(err error) *jsonrpcMessage {
 	return msg
 }
 
+type JsonError = jsonError
+
 type jsonError struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
