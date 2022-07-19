@@ -17,7 +17,7 @@ func HookHandleCallMsg(middleware HandleCallMsgMiddleware) {
 }
 
 func (h *handler) getHandleCallMsgNestedware(cp *callProc) HandleCallMsgFunc {
-	nestedWare := func(ctx context.Context, msg *jsonrpcMessage) *JsonRpcMessage {
+	nestedWare := func(ctx context.Context, msg *JsonRpcMessage) *JsonRpcMessage {
 		cp.ctx = ctx
 		return h.handleCallMsgCore(cp, msg)
 	}
@@ -25,4 +25,15 @@ func (h *handler) getHandleCallMsgNestedware(cp *callProc) HandleCallMsgFunc {
 		nestedWare = handleCallMsgFuncMiddlewares[i](nestedWare)
 	}
 	return nestedWare
+}
+
+// PreventMessagesWithouID is a HandleCallMsgMiddleware for preventing messages without ID
+var PreventMessagesWithouID HandleCallMsgMiddleware = func(next HandleCallMsgFunc) HandleCallMsgFunc {
+	return func(ctx context.Context, msg *JsonRpcMessage) *JsonRpcMessage {
+		resp := next(ctx, msg)
+		if resp == nil && msg.isNotification() {
+			return errorMessage(&invalidRequestError{"invalid request"})
+		}
+		return resp
+	}
 }
