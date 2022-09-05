@@ -180,11 +180,6 @@ func wsClientHeaders(endpoint, origin string) (string, http.Header, error) {
 	return endpointURL.String(), header, nil
 }
 
-// func newWebsocketCodec(conn *websocket.Conn) ServerCodec {
-// 	conn.SetReadLimit(maxRequestContentLength)
-// 	return NewFuncCodec(conn, conn.WriteJSON, conn.ReadJSON)
-// }
-
 type websocketCodec struct {
 	*jsonCodec
 	conn *websocket.Conn
