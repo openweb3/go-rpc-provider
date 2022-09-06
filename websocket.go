@@ -25,6 +25,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	mapset "github.com/deckarep/golang-set"
 	"github.com/ethereum/go-ethereum/log"
@@ -32,30 +33,39 @@ import (
 )
 
 const (
-	wsReadBuffer  = 1024
-	wsWriteBuffer = 1024
+	wsReadBuffer       = 1024
+	wsWriteBuffer      = 1024
+	wsPingInterval     = 60 * time.Second
+	wsPingWriteTimeout = 5 * time.Second
+	wsPongTimeout      = 30 * time.Second
+	wsMessageSizeLimit = 15 * 1024 * 1024
 )
 
 var wsBufferPool = new(sync.Pool)
+
+type WebsocketOption struct {
+	WsPingInterval time.Duration
+}
 
 // WebsocketHandler returns a handler that serves JSON-RPC to WebSocket connections.
 //
 // allowedOrigins should be a comma-separated list of allowed origin URLs.
 // To allow connections with any origin, pass "*".
-func (s *Server) WebsocketHandler(allowedOrigins []string) http.Handler {
+func (s *Server) WebsocketHandler(allowedOrigins []string, option ...WebsocketOption) http.Handler {
 	var upgrader = websocket.Upgrader{
 		ReadBufferSize:  wsReadBuffer,
 		WriteBufferSize: wsWriteBuffer,
 		WriteBufferPool: wsBufferPool,
 		CheckOrigin:     wsHandshakeValidator(allowedOrigins),
 	}
+	_option := get1stWsOption(option)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Debug("WebSocket upgrade failed", "err", err)
 			return
 		}
-		codec := newWebsocketCodec(conn)
+		codec := newWebsocketCodec(conn, r.Host, r.Header, _option.WsPingInterval)
 		codecWithCtx := ServerCodecWithContext{codec, r.Context()}
 		s.ServeCodec(codecWithCtx, 0)
 	})
@@ -120,11 +130,12 @@ func (e wsHandshakeError) Error() string {
 
 // DialWebsocketWithDialer creates a new RPC client that communicates with a JSON-RPC server
 // that is listening on the given endpoint using the provided dialer.
-func DialWebsocketWithDialer(ctx context.Context, endpoint, origin string, dialer websocket.Dialer) (*Client, error) {
+func DialWebsocketWithDialer(ctx context.Context, endpoint, origin string, dialer websocket.Dialer, option ...WebsocketOption) (*Client, error) {
 	endpoint, header, err := wsClientHeaders(endpoint, origin)
 	if err != nil {
 		return nil, err
 	}
+	_option := get1stWsOption(option)
 	return newClient(ctx, func(ctx context.Context) (ServerCodec, error) {
 		conn, resp, err := dialer.DialContext(ctx, endpoint, header)
 		if err != nil {
@@ -134,7 +145,7 @@ func DialWebsocketWithDialer(ctx context.Context, endpoint, origin string, diale
 			}
 			return nil, hErr
 		}
-		return newWebsocketCodec(conn), nil
+		return newWebsocketCodec(conn, endpoint, header, _option.WsPingInterval), nil
 	})
 }
 
@@ -169,7 +180,91 @@ func wsClientHeaders(endpoint, origin string) (string, http.Header, error) {
 	return endpointURL.String(), header, nil
 }
 
-func newWebsocketCodec(conn *websocket.Conn) ServerCodec {
-	conn.SetReadLimit(maxRequestContentLength)
-	return NewFuncCodec(conn, conn.WriteJSON, conn.ReadJSON)
+type websocketCodec struct {
+	*jsonCodec
+	conn *websocket.Conn
+	info PeerInfo
+
+	wg        sync.WaitGroup
+	pingReset chan struct{}
+}
+
+func newWebsocketCodec(conn *websocket.Conn, host string, req http.Header, wsPingInterval time.Duration) ServerCodec {
+	conn.SetReadLimit(wsMessageSizeLimit)
+	conn.SetPongHandler(func(appData string) error {
+		conn.SetReadDeadline(time.Time{})
+		return nil
+	})
+	wc := &websocketCodec{
+		jsonCodec: NewFuncCodec(conn, conn.WriteJSON, conn.ReadJSON).(*jsonCodec),
+		conn:      conn,
+		pingReset: make(chan struct{}, 1),
+		info: PeerInfo{
+			Transport:  "ws",
+			RemoteAddr: conn.RemoteAddr().String(),
+		},
+	}
+	// Fill in connection details.
+	wc.info.HTTP.Host = host
+	wc.info.HTTP.Origin = req.Get("Origin")
+	wc.info.HTTP.UserAgent = req.Get("User-Agent")
+	// Start pinger.
+	wc.wg.Add(1)
+	go wc.pingLoop(wsPingInterval)
+	return wc
+}
+
+func (wc *websocketCodec) close() {
+	wc.jsonCodec.close()
+	wc.wg.Wait()
+}
+
+func (wc *websocketCodec) peerInfo() PeerInfo {
+	return wc.info
+}
+
+func (wc *websocketCodec) writeJSON(ctx context.Context, v interface{}) error {
+	err := wc.jsonCodec.writeJSON(ctx, v)
+	if err == nil {
+		// Notify pingLoop to delay the next idle ping.
+		select {
+		case wc.pingReset <- struct{}{}:
+		default:
+		}
+	}
+	return err
+}
+
+// pingLoop sends periodic ping frames when the connection is idle.
+func (wc *websocketCodec) pingLoop(wsPingInterval time.Duration) {
+	var timer = time.NewTimer(wsPingInterval)
+	defer wc.wg.Done()
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-wc.closed():
+			return
+		case <-wc.pingReset:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			timer.Reset(wsPingInterval)
+		case <-timer.C:
+			wc.jsonCodec.encMu.Lock()
+			wc.conn.SetWriteDeadline(time.Now().Add(wsPingWriteTimeout))
+			wc.conn.WriteMessage(websocket.PingMessage, nil)
+			wc.conn.SetReadDeadline(time.Now().Add(wsPongTimeout))
+			wc.jsonCodec.encMu.Unlock()
+			timer.Reset(wsPingInterval)
+		}
+	}
+}
+
+func get1stWsOption(option []WebsocketOption) WebsocketOption {
+	_option := WebsocketOption{WsPingInterval: wsPingInterval}
+	if len(option) > 0 && _option.WsPingInterval > 0 {
+		_option = option[0]
+	}
+	return _option
 }
