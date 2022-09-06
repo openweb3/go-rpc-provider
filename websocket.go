@@ -262,12 +262,9 @@ func (wc *websocketCodec) pingLoop(wsPingInterval time.Duration) {
 }
 
 func get1stWsOption(option []WebsocketOption) WebsocketOption {
-	_option := WebsocketOption{}
-	if len(option) > 0 {
+	_option := WebsocketOption{WsPingInterval: wsPingInterval}
+	if len(option) > 0 && _option.WsPingInterval > 0 {
 		_option = option[0]
-		if _option.WsPingInterval == 0 {
-			_option.WsPingInterval = wsPingInterval
-		}
 	}
 	return _option
 }
