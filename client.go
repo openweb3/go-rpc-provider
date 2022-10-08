@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -460,6 +461,97 @@ func (c *Client) Subscribe(ctx context.Context, namespace string, channel interf
 		return nil, err
 	}
 	return op.sub, nil
+}
+
+type ErrResubscribe struct {
+	inner error
+}
+
+func newErrResubscribe(inner error) *ErrResubscribe {
+	return &ErrResubscribe{inner}
+}
+
+func (e *ErrResubscribe) Error() string {
+	return e.inner.Error()
+}
+
+type ReconnClientSubscription struct {
+	inner          *ClientSubscription
+	errc           chan error
+	resubSucessc   chan struct{}
+	quitc          chan struct{}
+	quitReciveOnce sync.Once
+	quitActOnce    sync.Once
+}
+
+func (r *ReconnClientSubscription) Err() <-chan error {
+	return r.errc
+}
+
+func (r *ReconnClientSubscription) ResubSuccess() <-chan struct{} {
+	return r.resubSucessc
+}
+
+func (r *ReconnClientSubscription) Unsubscribe() {
+	if r.inner != nil {
+		r.inner.Unsubscribe()
+	}
+
+	r.quitReciveOnce.Do(func() {
+		r.quitc <- struct{}{}
+	})
+}
+
+// SubscribeWithRetry will retry until success. It will notify error of subscription or every retry subscribe
+// error throgh channel returned by ReconnClientSubscription.Err(). The retry subscribe error is in type *ErrResubscribe.
+// It will notify subscribe successful signal through channel returned by ReconnClientSubscription.ResubSuccess().
+// It will stop subscription when called Unsubscribe()
+// Typical you could decide whether to Unsubscribe() according to retry error count.
+func (c *Client) SubscribeWithRetry(ctx context.Context, namespace string, channel interface{}, args ...interface{}) *ReconnClientSubscription {
+	rsub := &ReconnClientSubscription{
+		inner:        nil,
+		errc:         make(chan error, 100),
+		resubSucessc: make(chan struct{}, 100),
+		quitc:        make(chan struct{}, 1),
+	}
+
+	doSub := func() {
+		for {
+			sub, err := c.Subscribe(ctx, namespace, channel, args...)
+			if err != nil {
+				rsub.errc <- newErrResubscribe(err)
+				time.Sleep(time.Second)
+				continue
+			}
+			rsub.inner = sub
+			// discard if channel is full
+			if len(rsub.resubSucessc) < cap(rsub.resubSucessc) {
+				rsub.resubSucessc <- struct{}{}
+			}
+			return
+		}
+	}
+
+	go func() {
+
+		doSub()
+
+		for {
+			select {
+			case subErr := <-rsub.inner.Err():
+				rsub.errc <- subErr
+				doSub()
+			case <-rsub.quitc:
+				rsub.quitActOnce.Do(func() {
+					close(rsub.quitc)
+					close(rsub.errc)
+					close(rsub.resubSucessc)
+				})
+				return
+			}
+		}
+	}()
+	return rsub
 }
 
 func (c *Client) newMessage(method string, paramsIn ...interface{}) (*jsonrpcMessage, error) {
