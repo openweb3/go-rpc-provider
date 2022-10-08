@@ -484,6 +484,12 @@ type ReconnClientSubscription struct {
 	quitActOnce    sync.Once
 }
 
+func (r *ReconnClientSubscription) writeErr(err error) {
+	if len(r.errc) < cap(r.errc) {
+		r.errc <- newErrResubscribe(err)
+	}
+}
+
 func (r *ReconnClientSubscription) Err() <-chan error {
 	return r.errc
 }
@@ -502,16 +508,16 @@ func (r *ReconnClientSubscription) Unsubscribe() {
 	})
 }
 
-// SubscribeWithRetry will retry until success. It will notify error of subscription or every retry subscribe
-// error throgh channel returned by ReconnClientSubscription.Err(). The retry subscribe error is in type *ErrResubscribe.
+// SubscribeWithReconn will ceaselessly re-subscribe until success when subscription error. It will notify error of subscription
+// or every retry subscribe error throgh channel returned by ReconnClientSubscription.Err(). The re-subscribe error is in type *ErrResubscribe.
 // It will notify subscribe successful signal through channel returned by ReconnClientSubscription.ResubSuccess().
-// It will stop subscription when called Unsubscribe()
-// Typical you could decide whether to Unsubscribe() according to retry error count.
-func (c *Client) SubscribeWithRetry(ctx context.Context, namespace string, channel interface{}, args ...interface{}) *ReconnClientSubscription {
+// It will stop subscription and stop re-subscribe after Unsubscribe().
+// Typical you could decide whether to Unsubscribe() according to re-subscribe error count.
+func (c *Client) SubscribeWithReconn(ctx context.Context, namespace string, channel interface{}, args ...interface{}) *ReconnClientSubscription {
 	rsub := &ReconnClientSubscription{
 		inner:        nil,
-		errc:         make(chan error, 100),
-		resubSucessc: make(chan struct{}, 100),
+		errc:         make(chan error, 1000),
+		resubSucessc: make(chan struct{}, 1000),
 		quitc:        make(chan struct{}, 1),
 	}
 
@@ -519,8 +525,8 @@ func (c *Client) SubscribeWithRetry(ctx context.Context, namespace string, chann
 		for {
 			sub, err := c.Subscribe(ctx, namespace, channel, args...)
 			if err != nil {
-				rsub.errc <- newErrResubscribe(err)
-				time.Sleep(time.Second)
+				rsub.writeErr(newErrResubscribe(err))
+				time.Sleep(time.Second * 3)
 				continue
 			}
 			rsub.inner = sub
@@ -539,7 +545,7 @@ func (c *Client) SubscribeWithRetry(ctx context.Context, namespace string, chann
 		for {
 			select {
 			case subErr := <-rsub.inner.Err():
-				rsub.errc <- subErr
+				rsub.writeErr(subErr)
 				doSub()
 			case <-rsub.quitc:
 				rsub.quitActOnce.Do(func() {
