@@ -10,13 +10,15 @@ import (
 type MiddlewarableProvider struct {
 	Inner interfaces.Provider
 
-	callContextMiddles      []CallContextMiddleware
-	batchCallContextMiddles []BatchCallContextMiddleware
-	subscribeMiddles        []SubscribeMiddleware
+	callContextMiddles         []CallContextMiddleware
+	batchCallContextMiddles    []BatchCallContextMiddleware
+	subscribeMiddles           []SubscribeMiddleware
+	subscribeWithReconnMiddles []SubscribeWithReconnMiddleware
 
-	callContextNestedWare      CallContextFunc
-	batchcallContextNestedWare BatchCallContextFunc
-	subscribeNestedWare        SubscribeFunc
+	callContextNestedWare         CallContextFunc
+	batchcallContextNestedWare    BatchCallContextFunc
+	subscribeNestedWare           SubscribeFunc
+	subscribeWithReconnNestedWare SubscribeWithReconnFunc
 }
 
 func NewMiddlewarableProvider(p interfaces.Provider) *MiddlewarableProvider {
@@ -25,9 +27,10 @@ func NewMiddlewarableProvider(p interfaces.Provider) *MiddlewarableProvider {
 	}
 
 	m := &MiddlewarableProvider{Inner: p,
-		callContextNestedWare:      p.CallContext,
-		batchcallContextNestedWare: p.BatchCallContext,
-		subscribeNestedWare:        p.Subscribe,
+		callContextNestedWare:         p.CallContext,
+		batchcallContextNestedWare:    p.BatchCallContext,
+		subscribeNestedWare:           p.Subscribe,
+		subscribeWithReconnNestedWare: p.SubscribeWithReconn,
 	}
 	return m
 }
@@ -40,6 +43,8 @@ type BatchCallContextFunc func(ctx context.Context, b []rpc.BatchElem) error
 
 type SubscribeFunc func(ctx context.Context, namespace string, channel interface{}, args ...interface{}) (*rpc.ClientSubscription, error)
 
+type SubscribeWithReconnFunc func(ctx context.Context, namespace string, channel interface{}, args ...interface{}) *rpc.ReconnClientSubscription
+
 // type CallMiddleware func(CallFunc) CallFunc
 type CallContextMiddleware func(CallContextFunc) CallContextFunc
 
@@ -47,6 +52,8 @@ type CallContextMiddleware func(CallContextFunc) CallContextFunc
 type BatchCallContextMiddleware func(BatchCallContextFunc) BatchCallContextFunc
 
 type SubscribeMiddleware func(SubscribeFunc) SubscribeFunc
+
+type SubscribeWithReconnMiddleware func(SubscribeWithReconnFunc) SubscribeWithReconnFunc
 
 // callMiddles: A -> B -> C, execute order is A -> B -> C
 func (mp *MiddlewarableProvider) HookCallContext(cm CallContextMiddleware) {
@@ -73,6 +80,14 @@ func (mp *MiddlewarableProvider) HookSubscribe(cm SubscribeMiddleware) {
 	}
 }
 
+func (mp *MiddlewarableProvider) HookSubscribeWithReconn(cm SubscribeWithReconnMiddleware) {
+	mp.subscribeWithReconnMiddles = append(mp.subscribeWithReconnMiddles, cm)
+	mp.subscribeWithReconnNestedWare = mp.Inner.SubscribeWithReconn
+	for i := len(mp.subscribeWithReconnMiddles) - 1; i >= 0; i-- {
+		mp.subscribeWithReconnNestedWare = mp.subscribeWithReconnMiddles[i](mp.subscribeWithReconnNestedWare)
+	}
+}
+
 func (mp *MiddlewarableProvider) CallContext(ctx context.Context, resultPtr interface{}, method string, args ...interface{}) error {
 	return mp.callContextNestedWare(ctx, resultPtr, method, args...)
 }
@@ -83,6 +98,10 @@ func (mp *MiddlewarableProvider) BatchCallContext(ctx context.Context, b []rpc.B
 
 func (mp *MiddlewarableProvider) Subscribe(ctx context.Context, namespace string, channel interface{}, args ...interface{}) (*rpc.ClientSubscription, error) {
 	return mp.subscribeNestedWare(ctx, namespace, channel, args...)
+}
+
+func (mp *MiddlewarableProvider) SubscribeWithReconn(ctx context.Context, namespace string, channel interface{}, args ...interface{}) *rpc.ReconnClientSubscription {
+	return mp.subscribeWithReconnNestedWare(ctx, namespace, channel, args...)
 }
 
 func (mp *MiddlewarableProvider) Close() {
