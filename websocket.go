@@ -154,13 +154,13 @@ func DialWebsocketWithDialer(ctx context.Context, endpoint, origin string, diale
 //
 // The context is used for the initial connection establishment. It does not
 // affect subsequent interactions with the client.
-func DialWebsocket(ctx context.Context, endpoint, origin string) (*Client, error) {
+func DialWebsocket(ctx context.Context, endpoint, origin string, option ...WebsocketOption) (*Client, error) {
 	dialer := websocket.Dialer{
 		ReadBufferSize:  wsReadBuffer,
 		WriteBufferSize: wsWriteBuffer,
 		WriteBufferPool: wsBufferPool,
 	}
-	return DialWebsocketWithDialer(ctx, endpoint, origin, dialer)
+	return DialWebsocketWithDialer(ctx, endpoint, origin, dialer, option...)
 }
 
 func wsClientHeaders(endpoint, origin string) (string, http.Header, error) {
