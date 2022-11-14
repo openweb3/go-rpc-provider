@@ -1,5 +1,8 @@
 # Change Log
 
+## v0.3.1
+- Support block tag: finalize and safe 
+
 ## v0.2.1
 - Support logger middleware
 - Set default retry count to 0
