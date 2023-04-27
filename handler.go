@@ -28,6 +28,28 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
+// client connection handler
+type ConnHandler = handler
+
+// ParseCallArguments parses call arguments from JSON-RPC message.
+func (h *ConnHandler) ParseCallArguments(msg *jsonrpcMessage) (res []interface{}, err error) {
+	callb := h.reg.callback(msg.Method)
+	if callb == nil {
+		return nil, &methodNotFoundError{method: msg.Method}
+	}
+
+	args, err := parsePositionalArguments(msg.Params, callb.argTypes, callb.isVariadic)
+	if err != nil {
+		return nil, &invalidParamsError{err.Error()}
+	}
+
+	for i := range args {
+		res = append(res, args[i].Interface())
+	}
+
+	return res, nil
+}
+
 // handler handles JSON-RPC messages. There is one handler per connection. Note that
 // handler is not safe for concurrent use. Message handling never blocks indefinitely
 // because RPCs are processed on background goroutines launched by handler.
@@ -75,19 +97,20 @@ type callProc struct {
 }
 
 func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *serviceRegistry) *handler {
-	rootCtx, cancelRoot := context.WithCancel(connCtx)
 	h := &handler{
 		reg:            reg,
 		idgen:          idgen,
 		conn:           conn,
 		respWait:       make(map[string]*requestOp),
 		clientSubs:     make(map[string]*ClientSubscription),
-		rootCtx:        rootCtx,
-		cancelRoot:     cancelRoot,
 		allowSubscribe: true,
 		serverSubs:     make(map[ID]*Subscription),
 		log:            log.Root(),
 	}
+
+	connCtx = context.WithValue(connCtx, "handler", h)
+	h.rootCtx, h.cancelRoot = context.WithCancel(connCtx)
+
 	if conn.remoteAddr() != "" {
 		h.log = h.log.New("conn", conn.remoteAddr())
 	}
