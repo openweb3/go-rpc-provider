@@ -222,8 +222,8 @@ func (c *jsonCodec) readBatch() (msg []*jsonrpcMessage, batch bool, err error) {
 	if err := c.decode(&rawmsg); err != nil {
 		return nil, false, err
 	}
-	msg, batch = parseMessage(rawmsg)
-	return msg, batch, nil
+	msg, batch, err = parseMessage(rawmsg)
+	return msg, batch, err
 }
 
 func (c *jsonCodec) writeJSON(ctx context.Context, v interface{}) error {
@@ -254,11 +254,11 @@ func (c *jsonCodec) closed() <-chan interface{} {
 // checks in this function because the raw message has already been syntax-checked when it
 // is called. Any non-JSON-RPC messages in the input return the zero value of
 // jsonrpcMessage.
-func parseMessage(raw json.RawMessage) ([]*jsonrpcMessage, bool) {
+func parseMessage(raw json.RawMessage) ([]*jsonrpcMessage, bool, error) {
 	if !isBatch(raw) {
 		msgs := []*jsonrpcMessage{{}}
 		json.Unmarshal(raw, &msgs[0])
-		return msgs, false
+		return msgs, false, nil
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.Token() // skip '['
@@ -266,8 +266,11 @@ func parseMessage(raw json.RawMessage) ([]*jsonrpcMessage, bool) {
 	for dec.More() {
 		msgs = append(msgs, new(jsonrpcMessage))
 		dec.Decode(&msgs[len(msgs)-1])
+		if msgs[len(msgs)-1] == nil {
+			return nil, false, &invalidRequestError{"invalid request"}
+		}
 	}
-	return msgs, true
+	return msgs, true, nil
 }
 
 // isBatch returns true when the first non-whitespace characters is '['

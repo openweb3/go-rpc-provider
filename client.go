@@ -730,6 +730,10 @@ func (c *Client) read(codec ServerCodec) {
 		if _, ok := err.(*json.SyntaxError); ok {
 			codec.writeJSON(context.Background(), errorMessage(&parseError{err.Error()}))
 		}
+		if _, ok := err.(*invalidRequestError); ok {
+			codec.writeJSON(context.Background(), errorMessage(err))
+			continue // do not terminate on invalid request
+		}
 		if err != nil {
 			c.readErr <- err
 			return
