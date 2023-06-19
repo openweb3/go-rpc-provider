@@ -4,6 +4,9 @@
 --> []
 <-- {"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"empty batch"}}
 
+--> [null, null]
+<-- {"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"empty batch"}}
+
 --> [1]
 <-- [{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"invalid request"}}]
 

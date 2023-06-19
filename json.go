@@ -266,6 +266,10 @@ func parseMessage(raw json.RawMessage) ([]*jsonrpcMessage, bool) {
 	for dec.More() {
 		msgs = append(msgs, new(jsonrpcMessage))
 		dec.Decode(&msgs[len(msgs)-1])
+		// remove null entries from batch query
+		if msgs[len(msgs)-1] == nil {
+			msgs = msgs[:len(msgs)-1]
+		}
 	}
 	return msgs, true
 }
