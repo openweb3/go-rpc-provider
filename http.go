@@ -170,13 +170,16 @@ func (hc *httpConn) doRequest(ctx context.Context, msg interface{}) (io.Reader, 
 	if err != nil {
 		return nil, err
 	}
-	// req := hc.req.WithContext(ctx)
-	// req.Body = ioutil.NopCloser(bytes.NewReader(body))
-	// req.ContentLength = int64(len(body))
 
 	req := &fasthttp.Request{}
 	hc.req.CopyTo(req)
 	req.SetBody(body)
+
+	for _, f := range beforeSendHttpHandlers {
+		if err := f(ctx, req); err != nil {
+			return nil, err
+		}
+	}
 
 	resp := &fasthttp.Response{}
 	deadline, ok := ctx.Deadline()
