@@ -120,6 +120,7 @@ func errorMessage(err error) *jsonrpcMessage {
 	msg := &jsonrpcMessage{Version: vsn, ID: null, Error: &jsonError{
 		Code:    defaultErrorCode,
 		Message: err.Error(),
+		inner:   err,
 	}}
 	ec, ok := err.(Error)
 	if ok {
@@ -134,6 +135,7 @@ type jsonError struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
+	inner   error
 }
 
 func (err *jsonError) Error() string {
@@ -150,6 +152,13 @@ func (err *jsonError) Error() string {
 
 func (err *jsonError) ErrorCode() int {
 	return err.Code
+}
+
+func (err *jsonError) Inner() error {
+	if err == nil {
+		return nil
+	}
+	return err.inner
 }
 
 // Conn is a subset of the methods of net.Conn which are sufficient for ServerCodec.
