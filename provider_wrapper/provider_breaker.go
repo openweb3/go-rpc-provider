@@ -7,20 +7,20 @@ import (
 	"github.com/openweb3/go-rpc-provider/interfaces"
 )
 
-func NewBreakerProvider(inner interfaces.Provider, breaker ICircuitBreaker) *MiddlewarableProvider {
+func NewCircuitBreakerProvider(inner interfaces.Provider, breaker CircuitBreaker) *MiddlewarableProvider {
 	m := NewMiddlewarableProvider(inner)
 
-	r := &BreakerMiddleware{breaker}
-	m.HookCallContext(r.callContextMiddleware)
-	m.HookBatchCallContext(r.batchCallContextMiddleware)
+	b := &CircuitBreakerMiddleware{breaker}
+	m.HookCallContext(b.callContextMiddleware)
+	m.HookBatchCallContext(b.batchCallContextMiddleware)
 	return m
 }
 
-type BreakerMiddleware struct {
-	breaker ICircuitBreaker
+type CircuitBreakerMiddleware struct {
+	breaker CircuitBreaker
 }
 
-func (r *BreakerMiddleware) callContextMiddleware(call CallContextFunc) CallContextFunc {
+func (r *CircuitBreakerMiddleware) callContextMiddleware(call CallContextFunc) CallContextFunc {
 	return func(ctx context.Context, resultPtr interface{}, method string, args ...interface{}) error {
 		handler := func() error {
 			return call(ctx, resultPtr, method, args...)
@@ -29,7 +29,7 @@ func (r *BreakerMiddleware) callContextMiddleware(call CallContextFunc) CallCont
 	}
 }
 
-func (r *BreakerMiddleware) batchCallContextMiddleware(call BatchCallContextFunc) BatchCallContextFunc {
+func (r *CircuitBreakerMiddleware) batchCallContextMiddleware(call BatchCallContextFunc) BatchCallContextFunc {
 	return func(ctx context.Context, b []rpc.BatchElem) error {
 		handler := func() error {
 			return call(ctx, b)

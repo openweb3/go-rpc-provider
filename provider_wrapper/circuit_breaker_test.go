@@ -9,7 +9,7 @@ import (
 )
 
 func TestCircuitBreakerClose2Open(t *testing.T) {
-	cb := CircuitBreaker{
+	cb := DefaultCircuitBreaker{
 		MaxFail:        3,
 		FailTimeWindow: time.Second,
 		OpenColdTime:   time.Millisecond * 500,
@@ -35,7 +35,7 @@ func TestCircuitBreakerClose2Open(t *testing.T) {
 }
 
 func TestCircuitBreakerOpen2HalfOpen(t *testing.T) {
-	cb := CircuitBreaker{
+	cb := DefaultCircuitBreaker{
 		MaxFail:        3,
 		FailTimeWindow: time.Second,
 		OpenColdTime:   time.Millisecond * 500,
@@ -55,7 +55,7 @@ func TestCircuitBreakerOpen2HalfOpen(t *testing.T) {
 }
 
 func TestCircuitBreakerHalfOpen2Other(t *testing.T) {
-	cb := CircuitBreaker{
+	cb := DefaultCircuitBreaker{
 		MaxFail:        3,
 		FailTimeWindow: time.Second,
 		OpenColdTime:   time.Millisecond * 500,

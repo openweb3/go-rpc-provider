@@ -7,7 +7,7 @@ import (
 	"github.com/openweb3/go-rpc-provider/utils"
 )
 
-type ICircuitBreaker interface {
+type CircuitBreaker interface {
 	Do(handler func() error) error
 	State() BreakerState
 }
@@ -23,7 +23,7 @@ const (
 var ErrCircuitOpen = errors.New("circuit breaked")
 var ErrUnknownCircuitState = errors.New("unknown circuit state")
 
-type CircuitBreaker struct {
+type DefaultCircuitBreaker struct {
 	MaxFail        int
 	FailTimeWindow time.Duration // continuous fail maxFail times between failTimeWindow, close -> open
 	OpenColdTime   time.Duration // after openColdTime, open -> halfopen
@@ -31,7 +31,7 @@ type CircuitBreaker struct {
 	lastState      BreakerState // the state changed when Do
 }
 
-func (c *CircuitBreaker) Do(handler func() error) error {
+func (c *DefaultCircuitBreaker) Do(handler func() error) error {
 	switch c.State() {
 	case BREAKER_CLOSED:
 		err := handler()
@@ -74,7 +74,7 @@ func (c *CircuitBreaker) Do(handler func() error) error {
 	}
 }
 
-func (c *CircuitBreaker) State() BreakerState {
+func (c *DefaultCircuitBreaker) State() BreakerState {
 	if c.lastState == BREAKER_OPEN && c.sinceLastFail() > c.OpenColdTime {
 		return BREAKER_HALF_OPEN
 	}
@@ -83,7 +83,7 @@ func (c *CircuitBreaker) State() BreakerState {
 }
 
 // 1st return means if reached max fail.
-func (c *CircuitBreaker) maxfailUsedTime() (bool, time.Duration) {
+func (c *DefaultCircuitBreaker) maxfailUsedTime() (bool, time.Duration) {
 	failLen := len(c.failHistory)
 	if failLen < c.MaxFail {
 		return false, 0
@@ -92,7 +92,7 @@ func (c *CircuitBreaker) maxfailUsedTime() (bool, time.Duration) {
 	return true, time.Since(c.failHistory[failLen-c.MaxFail]) - c.sinceLastFail()
 }
 
-func (c *CircuitBreaker) sinceLastFail() time.Duration {
+func (c *DefaultCircuitBreaker) sinceLastFail() time.Duration {
 	lastFail := c.failHistory[len(c.failHistory)-1]
 	return time.Since(lastFail)
 }
