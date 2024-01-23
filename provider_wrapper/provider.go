@@ -43,7 +43,7 @@ func (o *Option) WithLooger(w io.Writer) *Option {
 	return o
 }
 
-func (o *Option) WithCircuitBreaker(circuitBreakerOption DefaultCircuitBreaderOption) *Option {
+func (o *Option) WithCircuitBreaker(circuitBreakerOption DefaultCircuitBreakerOption) *Option {
 	o.CircuitBreaker = NewDefaultCircuitBreaker(circuitBreakerOption)
 	return o
 }

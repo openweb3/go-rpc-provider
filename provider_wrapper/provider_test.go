@@ -25,7 +25,7 @@ func TestConfigurationDefault(t *testing.T) {
 }
 
 func TestProviderShouldCircuitBreak(t *testing.T) {
-	p, err := NewProviderWithOption("http://localhost:1234", *new(Option).WithCircuitBreaker(DefaultCircuitBreaderOption{}))
+	p, err := NewProviderWithOption("http://localhost:1234", *new(Option).WithCircuitBreaker(DefaultCircuitBreakerOption{}))
 	assert.NilError(t, err)
 
 	var result interface{}
