@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/mcuadros/go-defaults"
 	"github.com/openweb3/go-rpc-provider/utils"
 )
 
@@ -23,12 +24,27 @@ const (
 var ErrCircuitOpen = errors.New("circuit breaked")
 var ErrUnknownCircuitState = errors.New("unknown circuit state")
 
+type DefaultCircuitBreaderOption struct {
+	MaxFail        int           `default:"5"`
+	FailTimeWindow time.Duration `default:"10s"` // continuous fail maxFail times between failTimeWindow, close -> open
+	OpenColdTime   time.Duration `default:"10s"` // after openColdTime, open -> halfopen
+}
+
 type DefaultCircuitBreaker struct {
-	MaxFail        int
-	FailTimeWindow time.Duration // continuous fail maxFail times between failTimeWindow, close -> open
-	OpenColdTime   time.Duration // after openColdTime, open -> halfopen
-	failHistory    []time.Time
-	lastState      BreakerState // the state changed when Do
+	DefaultCircuitBreaderOption
+	failHistory []time.Time
+	lastState   BreakerState // the state changed when Do
+}
+
+func NewDefaultCircuitBreaker(option ...DefaultCircuitBreaderOption) *DefaultCircuitBreaker {
+	if len(option) == 0 {
+		option = []DefaultCircuitBreaderOption{}
+	}
+	defaults.SetDefaults(&option[0])
+
+	return &DefaultCircuitBreaker{
+		DefaultCircuitBreaderOption: option[0],
+	}
 }
 
 func (c *DefaultCircuitBreaker) Do(handler func() error) error {

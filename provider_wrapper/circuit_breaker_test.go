@@ -10,9 +10,11 @@ import (
 
 func TestCircuitBreakerClose2Open(t *testing.T) {
 	cb := DefaultCircuitBreaker{
-		MaxFail:        3,
-		FailTimeWindow: time.Second,
-		OpenColdTime:   time.Millisecond * 500,
+		DefaultCircuitBreaderOption: DefaultCircuitBreaderOption{
+			MaxFail:        3,
+			FailTimeWindow: time.Second,
+			OpenColdTime:   time.Millisecond * 500,
+		},
 	}
 
 	ErrTest := errors.New("test")
@@ -36,11 +38,13 @@ func TestCircuitBreakerClose2Open(t *testing.T) {
 
 func TestCircuitBreakerOpen2HalfOpen(t *testing.T) {
 	cb := DefaultCircuitBreaker{
-		MaxFail:        3,
-		FailTimeWindow: time.Second,
-		OpenColdTime:   time.Millisecond * 500,
-		failHistory:    []time.Time{time.Now(), time.Now(), time.Now()},
-		lastState:      BREAKER_OPEN,
+		DefaultCircuitBreaderOption: DefaultCircuitBreaderOption{
+			MaxFail:        3,
+			FailTimeWindow: time.Second,
+			OpenColdTime:   time.Millisecond * 500,
+		},
+		failHistory: []time.Time{time.Now(), time.Now(), time.Now()},
+		lastState:   BREAKER_OPEN,
 	}
 
 	// is open
@@ -56,10 +60,12 @@ func TestCircuitBreakerOpen2HalfOpen(t *testing.T) {
 
 func TestCircuitBreakerHalfOpen2Other(t *testing.T) {
 	cb := DefaultCircuitBreaker{
-		MaxFail:        3,
-		FailTimeWindow: time.Second,
-		OpenColdTime:   time.Millisecond * 500,
-		lastState:      BREAKER_HALF_OPEN,
+		DefaultCircuitBreaderOption: DefaultCircuitBreaderOption{
+			MaxFail:        3,
+			FailTimeWindow: time.Second,
+			OpenColdTime:   time.Millisecond * 500,
+		},
+		lastState: BREAKER_HALF_OPEN,
 	}
 
 	ErrTest := errors.New("test")
