@@ -29,13 +29,13 @@ type DefaultCircuitBreakerOption struct {
 	MaxFail        int           `default:"5"`
 	FailTimeWindow time.Duration `default:"10s"` // continuous fail maxFail times between failTimeWindow, close -> open
 	OpenColdTime   time.Duration `default:"10s"` // after openColdTime, open -> halfopen
-	sync.Mutex
 }
 
 type DefaultCircuitBreaker struct {
 	DefaultCircuitBreakerOption
 	failHistory []time.Time
 	lastState   BreakerState // the state changed when Do
+	sync.Mutex
 }
 
 func NewDefaultCircuitBreaker(option ...DefaultCircuitBreakerOption) *DefaultCircuitBreaker {
@@ -62,9 +62,7 @@ func (c *DefaultCircuitBreaker) Do(handler func() error) error {
 			return err
 		} else {
 			c.failHistory = append(c.failHistory, time.Now())
-			isReached, maxfailUsedTime := c.maxfailUsedTime()
-
-			if !isReached || maxfailUsedTime > c.FailTimeWindow {
+			if !c.isMaxfailAcheived() {
 				return err
 			}
 
@@ -97,11 +95,23 @@ func (c *DefaultCircuitBreaker) Do(handler func() error) error {
 }
 
 func (c *DefaultCircuitBreaker) State() BreakerState {
+	c.Lock()
+	defer c.Unlock()
+
 	if c.lastState == BREAKER_OPEN && c.sinceLastFail() > c.OpenColdTime {
 		return BREAKER_HALF_OPEN
 	}
 
 	return c.lastState
+}
+
+func (c *DefaultCircuitBreaker) isMaxfailAcheived() bool {
+	isReached, maxfailUsedTime := c.maxfailUsedTime()
+
+	if !isReached || maxfailUsedTime > c.FailTimeWindow {
+		return false
+	}
+	return true
 }
 
 // 1st return means if reached max fail.

@@ -29,7 +29,7 @@ func TestProviderShouldCircuitBreak(t *testing.T) {
 	assert.NilError(t, err)
 
 	var result interface{}
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 3; i++ {
 		go func() {
 			for {
 				err = p.CallContext(context.Background(), &result, "xx")
