@@ -2,6 +2,7 @@ package providers
 
 import (
 	"errors"
+	"math"
 	"sync"
 	"time"
 
@@ -59,6 +60,7 @@ func (c *DefaultCircuitBreaker) Do(handler func() error) error {
 
 		if err == nil || utils.IsRPCJSONError(err) {
 			c.failHistory = []time.Time{}
+			c.lastState = BREAKER_CLOSED
 			return err
 		} else {
 			c.failHistory = append(c.failHistory, time.Now())
@@ -124,9 +126,10 @@ func (c *DefaultCircuitBreaker) maxfailUsedTime() (bool, time.Duration) {
 	return true, time.Since(c.failHistory[failLen-c.MaxFail]) - c.sinceLastFail()
 }
 
+// note: return max int64 when failHistory is empty becase that means no failure before.
 func (c *DefaultCircuitBreaker) sinceLastFail() time.Duration {
 	if len(c.failHistory) == 0 {
-		return 0
+		return math.MaxInt64
 	}
 	lastFail := c.failHistory[len(c.failHistory)-1]
 	return time.Since(lastFail)
