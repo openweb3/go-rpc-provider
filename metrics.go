@@ -32,7 +32,7 @@ var (
 	_ = ethrpc.API{}
 )
 
-func newRPCServingTimer(method string, valid bool) metrics.Timer {
+func newRPCServingTimer(method string, valid bool) *metrics.Timer {
 	flag := "success"
 	if !valid {
 		flag = "failure"
