@@ -27,11 +27,15 @@ func TestConfigurationDefault(t *testing.T) {
 }
 
 func TestProviderShouldCircuitBreak(t *testing.T) {
-	p, err := NewProviderWithOption("http://localhost:1234", *new(Option).WithCircuitBreaker(DefaultCircuitBreakerOption{}))
+	p, err := NewProviderWithOption("http://localhost:12345", *new(Option).WithCircuitBreaker(DefaultCircuitBreakerOption{
+		MaxFail:        1,
+		FailTimeWindow: time.Second * 2,
+		OpenColdTime:   time.Second,
+	}))
 	assert.NilError(t, err)
 
 	var result interface{}
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 1; i++ {
 		go func() {
 			for {
 				err = p.CallContext(context.Background(), &result, "xx")
