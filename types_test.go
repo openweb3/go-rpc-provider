@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 )
 
 func TestBlockNumberJSONUnmarshal(t *testing.T) {
@@ -37,7 +36,7 @@ func TestBlockNumberJSONUnmarshal(t *testing.T) {
 		4:  {`"0x01"`, true, BlockNumber(0)},
 		5:  {`"0x1"`, false, BlockNumber(1)},
 		6:  {`"0x12"`, false, BlockNumber(18)},
-		7:  {`"0x7fffffffffffffff"`, false, BlockNumber(math.MaxInt64)},
+		7:  {`"0x7fffffffffffffff"`, false, BlockNumber(0x7fffffffffffffff)},
 		8:  {`"0x8000000000000000"`, true, BlockNumber(0)},
 		9:  {"0", true, BlockNumber(0)},
 		10: {`"ff"`, true, BlockNumber(0)},
@@ -79,7 +78,7 @@ func TestBlockNumberOrHash_UnmarshalJSON(t *testing.T) {
 		4:  {`"0x01"`, true, BlockNumberOrHash{}},
 		5:  {`"0x1"`, false, BlockNumberOrHashWithNumber(1)},
 		6:  {`"0x12"`, false, BlockNumberOrHashWithNumber(18)},
-		7:  {`"0x7fffffffffffffff"`, false, BlockNumberOrHashWithNumber(math.MaxInt64)},
+		7:  {`"0x7fffffffffffffff"`, false, BlockNumberOrHashWithNumber(BlockNumber(0x7fffffffffffffff))},
 		8:  {`"0x8000000000000000"`, true, BlockNumberOrHash{}},
 		9:  {"0", true, BlockNumberOrHash{}},
 		10: {`"ff"`, true, BlockNumberOrHash{}},
