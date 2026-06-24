@@ -18,6 +18,7 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -249,6 +250,72 @@ func TestClientSubscribeInvalidArg(t *testing.T) {
 	check(true, make(<-chan int))
 	check(false, make(chan int))
 	check(false, make(chan<- int))
+}
+
+func TestClientBatchCallWithServerBatchItemLimit(t *testing.T) {
+	server := newTestServer()
+	server.SetBatchLimits(1, 0)
+	defer server.Stop()
+
+	client := DialInProc(server)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	var first, second echoResult
+	batch := []BatchElem{
+		{Method: "test_echo", Args: []interface{}{"first", 1, nil}, Result: &first},
+		{Method: "test_echo", Args: []interface{}{"second", 2, nil}, Result: &second},
+	}
+	if err := client.BatchCallContext(ctx, batch); err != nil {
+		t.Fatalf("batch call returned transport error: %v", err)
+	}
+	if batch[0].Error == nil {
+		t.Fatalf("first batch element error: got nil, want batch too large")
+	}
+	if batch[0].Error.Error() != errMsgBatchTooLarge {
+		t.Fatalf("first batch element error: got %q, want %q", batch[0].Error.Error(), errMsgBatchTooLarge)
+	}
+	if !errors.Is(batch[1].Error, ErrMissingBatchResponse) {
+		t.Fatalf("second batch element error: got %v, want %v", batch[1].Error, ErrMissingBatchResponse)
+	}
+}
+
+func TestClientBatchCallWithServerBatchResponseLimit(t *testing.T) {
+	server := NewServer()
+	if err := server.RegisterName("batch", new(batchLimitTestService)); err != nil {
+		t.Fatal(err)
+	}
+	server.SetBatchLimits(0, 64)
+	defer server.Stop()
+
+	client := DialInProc(server)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	var first, second string
+	batch := []BatchElem{
+		{Method: "batch_large", Result: &first},
+		{Method: "batch_touch", Result: &second},
+	}
+	if err := client.BatchCallContext(ctx, batch); err != nil {
+		t.Fatalf("batch call returned transport error: %v", err)
+	}
+	if batch[0].Error == nil {
+		t.Fatalf("first batch element error: got nil, want batch response too large")
+	}
+	if batch[0].Error.Error() != errMsgBatchResponseTooLarge {
+		t.Fatalf("first batch element error: got %q, want %q", batch[0].Error.Error(), errMsgBatchResponseTooLarge)
+	}
+	if batch[1].Error == nil {
+		t.Fatalf("second batch element error: got nil, want batch response too large")
+	}
+	if batch[1].Error.Error() != errMsgBatchResponseTooLarge {
+		t.Fatalf("second batch element error: got %q, want %q", batch[1].Error.Error(), errMsgBatchResponseTooLarge)
+	}
 }
 
 func TestClientSubscribe(t *testing.T) {

@@ -18,7 +18,11 @@ package rpc
 
 import "fmt"
 
-const defaultErrorCode = -32000
+const (
+	defaultErrorCode            = -32000
+	errMsgBatchTooLarge         = "batch too large"
+	errMsgBatchResponseTooLarge = "batch response too large"
+)
 
 type methodNotFoundError struct{ method string }
 
