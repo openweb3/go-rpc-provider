@@ -17,7 +17,6 @@
 package rpc
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -35,6 +34,7 @@ import (
 var (
 	ErrClientQuit                = errors.New("client is closed")
 	ErrNoResult                  = errors.New("no result in JSON-RPC response")
+	ErrMissingBatchResponse      = errors.New("response batch did not contain a response to this call")
 	ErrSubscriptionQueueOverflow = errors.New("subscription queue overflow")
 	errClientReconnected         = errors.New("client reconnected")
 	errDead                      = errors.New("connection lost")
@@ -81,6 +81,9 @@ type Client struct {
 
 	idCounter uint32
 
+	batchItemLimit     int
+	batchResponseLimit int
+
 	// This function, if non-nil, is called when the connection is lost.
 	reconnectFunc reconnectFunc
 
@@ -122,7 +125,7 @@ func (c *Client) newClientConn(conn ServerCodec) *clientConn {
 	ctx = context.WithValue(ctx, "remote", conn.remoteAddr())
 	// add rpc client to the context
 	ctx = context.WithValue(ctx, "client", c)
-	handler := newHandler(ctx, conn, c.idgen, c.services)
+	handler := newHandler(ctx, conn, c.idgen, c.services, c.batchItemLimit, c.batchResponseLimit)
 	return &clientConn{conn, handler}
 }
 
@@ -137,13 +140,14 @@ type readOp struct {
 }
 
 type requestOp struct {
-	ids  []json.RawMessage
-	err  error
-	resp chan *jsonrpcMessage // receives up to len(ids) responses
-	sub  *ClientSubscription  // only set for EthSubscribe requests
+	ids         []json.RawMessage
+	err         error
+	resp        chan []*jsonrpcMessage // receives the whole response batch
+	sub         *ClientSubscription    // only set for EthSubscribe requests
+	hadResponse bool
 }
 
-func (op *requestOp) wait(ctx context.Context, c *Client) (*jsonrpcMessage, error) {
+func (op *requestOp) wait(ctx context.Context, c *Client) ([]*jsonrpcMessage, error) {
 	select {
 	case <-ctx.Done():
 		// Send the timeout to dispatch so it can remove the request IDs.
@@ -214,21 +218,27 @@ func newClient(initctx context.Context, connect reconnectFunc) (*Client, error) 
 }
 
 func initClient(conn ServerCodec, idgen func() ID, services *serviceRegistry) *Client {
+	return initClientWithBatchLimits(conn, idgen, services, 0, 0)
+}
+
+func initClientWithBatchLimits(conn ServerCodec, idgen func() ID, services *serviceRegistry, batchItemLimit, batchResponseLimit int) *Client {
 	_, isHTTP := conn.(*httpConn)
 	c := &Client{
-		idgen:       idgen,
-		isHTTP:      isHTTP,
-		services:    services,
-		writeConn:   conn,
-		close:       make(chan struct{}),
-		closing:     make(chan struct{}),
-		didClose:    make(chan struct{}),
-		reconnected: make(chan ServerCodec),
-		readOp:      make(chan readOp),
-		readErr:     make(chan error),
-		reqInit:     make(chan *requestOp),
-		reqSent:     make(chan error, 1),
-		reqTimeout:  make(chan *requestOp),
+		idgen:              idgen,
+		isHTTP:             isHTTP,
+		services:           services,
+		batchItemLimit:     batchItemLimit,
+		batchResponseLimit: batchResponseLimit,
+		writeConn:          conn,
+		close:              make(chan struct{}),
+		closing:            make(chan struct{}),
+		didClose:           make(chan struct{}),
+		reconnected:        make(chan ServerCodec),
+		readOp:             make(chan readOp),
+		readErr:            make(chan error),
+		reqInit:            make(chan *requestOp),
+		reqSent:            make(chan error, 1),
+		reqTimeout:         make(chan *requestOp),
 	}
 	if !isHTTP {
 		go c.dispatch(conn)
@@ -294,7 +304,7 @@ func (c *Client) CallContext(ctx context.Context, result interface{}, method str
 	if err != nil {
 		return err
 	}
-	op := &requestOp{ids: []json.RawMessage{msg.ID}, resp: make(chan *jsonrpcMessage, 1)}
+	op := &requestOp{ids: []json.RawMessage{msg.ID}, resp: make(chan []*jsonrpcMessage, 1)}
 
 	if c.isHTTP {
 		err = c.sendHTTP(ctx, op, msg)
@@ -306,15 +316,17 @@ func (c *Client) CallContext(ctx context.Context, result interface{}, method str
 	}
 
 	// dispatch has accepted the request and will close the channel when it quits.
-	switch resp, err := op.wait(ctx, c); {
+	switch batchresp, err := op.wait(ctx, c); {
 	case err != nil:
 		return err
-	case resp.Error != nil:
-		return resp.Error
-	case len(resp.Result) == 0:
+	case len(batchresp) == 0 || batchresp[0] == nil:
+		return ErrNoResult
+	case batchresp[0].Error != nil:
+		return batchresp[0].Error
+	case len(batchresp[0].Result) == 0:
 		return ErrNoResult
 	default:
-		return json.Unmarshal(resp.Result, &result)
+		return json.Unmarshal(batchresp[0].Result, &result)
 	}
 }
 
@@ -340,10 +352,14 @@ func (c *Client) BatchCall(b []BatchElem) error {
 //
 // Note that batch calls may not be executed atomically on the server side.
 func (c *Client) BatchCallContext(ctx context.Context, b []BatchElem) error {
+	if len(b) == 0 {
+		return &invalidRequestError{"empty batch"}
+	}
 	msgs := make([]*jsonrpcMessage, len(b))
+	byID := make(map[string]int, len(b))
 	op := &requestOp{
 		ids:  make([]json.RawMessage, len(b)),
-		resp: make(chan *jsonrpcMessage, len(b)),
+		resp: make(chan []*jsonrpcMessage, 1),
 	}
 	for i, elem := range b {
 		msg, err := c.newMessage(elem.Method, elem.Args...)
@@ -352,6 +368,7 @@ func (c *Client) BatchCallContext(ctx context.Context, b []BatchElem) error {
 		}
 		msgs[i] = msg
 		op.ids[i] = msg.ID
+		byID[string(msg.ID)] = i
 	}
 
 	var err error
@@ -361,23 +378,27 @@ func (c *Client) BatchCallContext(ctx context.Context, b []BatchElem) error {
 		err = c.send(ctx, op, msgs)
 	}
 
-	// Wait for all responses to come back.
-	for n := 0; n < len(b) && err == nil; n++ {
-		var resp *jsonrpcMessage
-		resp, err = op.wait(ctx, c)
-		if err != nil {
-			break
+	if err != nil {
+		return err
+	}
+
+	batchresp, err := op.wait(ctx, c)
+	if err != nil {
+		return err
+	}
+
+	for _, resp := range batchresp {
+		if resp == nil {
+			continue
 		}
 		// Find the element corresponding to this response.
-		// The element is guaranteed to be present because dispatch
-		// only sends valid IDs to our channel.
-		var elem *BatchElem
-		for i := range msgs {
-			if bytes.Equal(msgs[i].ID, resp.ID) {
-				elem = &b[i]
-				break
-			}
+		index, ok := byID[string(resp.ID)]
+		if !ok {
+			continue
 		}
+		delete(byID, string(resp.ID))
+
+		elem := &b[index]
 		if resp.Error != nil {
 			elem.Error = resp.Error
 			continue
@@ -388,7 +409,10 @@ func (c *Client) BatchCallContext(ctx context.Context, b []BatchElem) error {
 		}
 		elem.Error = json.Unmarshal(resp.Result, elem.Result)
 	}
-	return err
+	for _, index := range byID {
+		b[index].Error = ErrMissingBatchResponse
+	}
+	return nil
 }
 
 // Notify sends a notification, i.e. a method call that doesn't expect a response.
@@ -448,7 +472,7 @@ func (c *Client) Subscribe(ctx context.Context, namespace string, channel interf
 	}
 	op := &requestOp{
 		ids:  []json.RawMessage{msg.ID},
-		resp: make(chan *jsonrpcMessage),
+		resp: make(chan []*jsonrpcMessage, 1),
 		sub:  newClientSubscription(c, namespace, chanVal),
 	}
 

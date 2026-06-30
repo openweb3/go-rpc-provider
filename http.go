@@ -32,7 +32,8 @@ import (
 )
 
 const (
-	maxRequestContentLength = 1024 * 1024 * 5
+	defaultBodyLimit        = 1024 * 1024 * 5
+	maxRequestContentLength = defaultBodyLimit
 	contentType             = "application/json"
 )
 
@@ -143,7 +144,7 @@ func (c *Client) sendHTTP(ctx context.Context, op *requestOp, msg interface{}) e
 		return err
 	}
 
-	op.resp <- &respmsg
+	op.resp <- []*jsonrpcMessage{&respmsg}
 	return nil
 }
 
@@ -159,9 +160,11 @@ func (c *Client) sendBatchHTTP(ctx context.Context, op *requestOp, msgs []*jsonr
 		return err
 	}
 
+	batch := make([]*jsonrpcMessage, len(respmsgs))
 	for i := 0; i < len(respmsgs); i++ {
-		op.resp <- &respmsgs[i]
+		batch[i] = &respmsgs[i]
 	}
+	op.resp <- batch
 	return nil
 }
 
@@ -216,8 +219,15 @@ type httpServerConn struct {
 	r *http.Request
 }
 
-func newHTTPServerConn(r *http.Request, w http.ResponseWriter) ServerCodec {
-	body := io.LimitReader(r.Body, maxRequestContentLength)
+func requestBodyLimit(limit int) int {
+	if limit <= 0 {
+		return defaultBodyLimit
+	}
+	return limit
+}
+
+func newHTTPServerConn(r *http.Request, w http.ResponseWriter, limit int) ServerCodec {
+	body := io.LimitReader(r.Body, int64(requestBodyLimit(limit)))
 	conn := &httpServerConn{Reader: body, Writer: w, r: r}
 	return NewCodec(conn)
 }
@@ -240,7 +250,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	if code, err := validateRequest(r); err != nil {
+	limit := requestBodyLimit(s.httpBodyLimit)
+	if code, err := validateRequestWithLimit(r, limit); err != nil {
 		http.Error(w, err.Error(), code)
 		return
 	}
@@ -260,7 +271,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("content-type", contentType)
-	codec := newHTTPServerConn(r, w)
+	codec := newHTTPServerConn(r, w, limit)
 	defer codec.close()
 	s.serveSingleRequest(ctx, codec)
 }
@@ -268,11 +279,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // validateRequest returns a non-zero response code and error message if the
 // request is invalid.
 func validateRequest(r *http.Request) (int, error) {
+	return validateRequestWithLimit(r, defaultBodyLimit)
+}
+
+func validateRequestWithLimit(r *http.Request, limit int) (int, error) {
+	limit = requestBodyLimit(limit)
 	if r.Method == http.MethodPut || r.Method == http.MethodDelete {
 		return http.StatusMethodNotAllowed, errors.New("method not allowed")
 	}
-	if r.ContentLength > maxRequestContentLength {
-		err := fmt.Errorf("content length too large (%d>%d)", r.ContentLength, maxRequestContentLength)
+	if r.ContentLength > int64(limit) {
+		err := fmt.Errorf("content length too large (%d>%d)", r.ContentLength, limit)
 		return http.StatusRequestEntityTooLarge, err
 	}
 	// Allow OPTIONS (regardless of content-type)

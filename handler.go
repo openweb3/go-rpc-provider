@@ -56,21 +56,20 @@ func (h *ConnHandler) ParseCallArguments(msg *jsonrpcMessage) (res []interface{}
 //
 // The entry points for incoming messages are:
 //
-//    h.handleMsg(message)
-//    h.handleBatch(message)
+//	h.handleMsg(message)
+//	h.handleBatch(message)
 //
 // Outgoing calls use the requestOp struct. Register the request before sending it
 // on the connection:
 //
-//    op := &requestOp{ids: ...}
-//    h.addRequestOp(op)
+//	op := &requestOp{ids: ...}
+//	h.addRequestOp(op)
 //
 // Now send the request, then wait for the reply to be delivered through handleMsg:
 //
-//    if err := op.wait(...); err != nil {
-//        h.removeRequestOp(op) // timeout, etc.
-//    }
-//
+//	if err := op.wait(...); err != nil {
+//	    h.removeRequestOp(op) // timeout, etc.
+//	}
 type handler struct {
 	reg            *serviceRegistry
 	unsubscribeCb  *callback
@@ -89,6 +88,8 @@ type handler struct {
 
 	handleBatchNestedWare    HandleBatchFunc
 	handleBatchMiddlewareLen int
+	batchItemLimit           int
+	batchResponseLimit       int
 }
 
 type callProc struct {
@@ -96,16 +97,18 @@ type callProc struct {
 	notifiers []*Notifier
 }
 
-func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *serviceRegistry) *handler {
+func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *serviceRegistry, batchItemLimit, batchResponseLimit int) *handler {
 	h := &handler{
-		reg:            reg,
-		idgen:          idgen,
-		conn:           conn,
-		respWait:       make(map[string]*requestOp),
-		clientSubs:     make(map[string]*ClientSubscription),
-		allowSubscribe: true,
-		serverSubs:     make(map[ID]*Subscription),
-		log:            log.Root(),
+		reg:                reg,
+		idgen:              idgen,
+		conn:               conn,
+		respWait:           make(map[string]*requestOp),
+		clientSubs:         make(map[string]*ClientSubscription),
+		allowSubscribe:     true,
+		serverSubs:         make(map[ID]*Subscription),
+		log:                log.Root(),
+		batchItemLimit:     batchItemLimit,
+		batchResponseLimit: batchResponseLimit,
 	}
 
 	connCtx = context.WithValue(connCtx, "handler", h)
@@ -132,14 +135,18 @@ func (h *handler) handleBatchCore(ctx context.Context, msgs []*jsonrpcMessage) <
 		})
 		return nil
 	}
+	if h.batchItemLimit != 0 && len(msgs) > h.batchItemLimit {
+		h.startCallProc(ctx, func(cp *callProc) {
+			h.conn.writeJSON(cp.ctx, []*jsonrpcMessage{batchTooLargeResponse(msgs)})
+		})
+		return nil
+	}
 
 	// Handle non-call messages first:
 	calls := make([]*jsonrpcMessage, 0, len(msgs))
-	for _, msg := range msgs {
-		if handled := h.handleImmediate(msg); !handled {
-			calls = append(calls, msg)
-		}
-	}
+	h.handleResponses(msgs, func(msg *jsonrpcMessage) {
+		calls = append(calls, msg)
+	})
 	if len(calls) == 0 {
 		return nil
 	}
@@ -150,9 +157,26 @@ func (h *handler) handleBatchCore(ctx context.Context, msgs []*jsonrpcMessage) <
 	// Process calls on a goroutine because they may block indefinitely:
 	h.startCallProc(ctx, func(cp *callProc) {
 		answers := make([]*jsonrpcMessage, 0, len(msgs))
+		responseBytes := 0
 
-		for _, msg := range calls {
+		for i, msg := range calls {
 			if answer := h.handleCallMsg(cp, msg); answer != nil {
+				if h.batchResponseLimit != 0 {
+					answerBytes, err := json.Marshal(answer)
+					if err == nil {
+						responseBytes += len(answerBytes)
+					}
+					if responseBytes > h.batchResponseLimit {
+						answer = msg.errorResponse(&invalidRequestError{errMsgBatchResponseTooLarge})
+						answers = append(answers, answer)
+						for _, remaining := range calls[i+1:] {
+							if !remaining.isNotification() {
+								answers = append(answers, remaining.errorResponse(&invalidRequestError{errMsgBatchResponseTooLarge}))
+							}
+						}
+						break
+					}
+				}
 				answers = append(answers, answer)
 			}
 		}
@@ -171,24 +195,33 @@ func (h *handler) handleBatchCore(ctx context.Context, msgs []*jsonrpcMessage) <
 	return msgsC
 }
 
+func batchTooLargeResponse(batch []*jsonrpcMessage) *jsonrpcMessage {
+	resp := errorMessage(&invalidRequestError{errMsgBatchTooLarge})
+	for _, msg := range batch {
+		if msg.isCall() {
+			resp.ID = msg.ID
+			break
+		}
+	}
+	return resp
+}
+
 // handleMsg handles a single message.
 func (h *handler) handleMsg(msg *jsonrpcMessage) {
-	if ok := h.handleImmediate(msg); ok {
-		return
-	}
+	msgs := []*jsonrpcMessage{msg}
+	h.handleResponses(msgs, func(msg *jsonrpcMessage) {
+		h.startCallProc(h.rootCtx, func(cp *callProc) {
+			answer := h.handleCallMsg(cp, msg)
 
-	h.startCallProc(h.rootCtx, func(cp *callProc) {
-		answer := h.handleCallMsg(cp, msg)
-
-		h.addSubscriptions(cp.notifiers)
-		if answer != nil {
-			h.conn.writeJSON(cp.ctx, answer)
-		}
-		for _, n := range cp.notifiers {
-			n.activate()
-		}
+			h.addSubscriptions(cp.notifiers)
+			if answer != nil {
+				h.conn.writeJSON(cp.ctx, answer)
+			}
+			for _, n := range cp.notifiers {
+				n.activate()
+			}
+		})
 	})
-
 }
 
 // close cancels all requests except for inflightReq and waits for
@@ -272,23 +305,55 @@ func (h *handler) startCallProc(ctx context.Context, fn func(*callProc)) {
 	}()
 }
 
-// handleImmediate executes non-call messages. It returns false if the message is a
-// call or requires a reply.
-func (h *handler) handleImmediate(msg *jsonrpcMessage) bool {
-	start := time.Now()
-	switch {
-	case msg.isNotification():
-		if strings.HasSuffix(msg.Method, notificationMethodSuffix) {
-			h.handleSubscriptionResult(msg)
-			return true
+// handleResponses processes method call responses.
+func (h *handler) handleResponses(batch []*jsonrpcMessage, handleCall func(*jsonrpcMessage)) {
+	var resolvedops []*requestOp
+	handleResp := func(msg *jsonrpcMessage) {
+		op := h.respWait[string(msg.ID)]
+		if op == nil {
+			h.log.Debug("Unsolicited RPC response", "reqid", idForLog{msg.ID})
+			return
 		}
-		return false
-	case msg.isResponse():
-		h.handleResponse(msg)
-		h.log.Trace("Handled RPC response", "reqid", idForLog{msg.ID}, "t", time.Since(start))
-		return true
-	default:
-		return false
+		resolvedops = append(resolvedops, op)
+		delete(h.respWait, string(msg.ID))
+
+		// For subscription responses, start the subscription if the server
+		// indicates success. EthSubscribe gets unblocked in either case through
+		// the op.resp channel.
+		if op.sub != nil {
+			if msg.Error != nil {
+				op.err = msg.Error
+			} else if op.err = json.Unmarshal(msg.Result, &op.sub.subid); op.err == nil {
+				go op.sub.start()
+				h.clientSubs[op.sub.subid] = op.sub
+			}
+		}
+
+		if !op.hadResponse {
+			op.hadResponse = true
+			op.resp <- batch
+		}
+	}
+
+	for _, msg := range batch {
+		start := time.Now()
+		switch {
+		case msg.isResponse():
+			handleResp(msg)
+			h.log.Trace("Handled RPC response", "reqid", idForLog{msg.ID}, "t", time.Since(start))
+		case msg.isNotification():
+			if strings.HasSuffix(msg.Method, notificationMethodSuffix) {
+				h.handleSubscriptionResult(msg)
+				continue
+			}
+			handleCall(msg)
+		default:
+			handleCall(msg)
+		}
+	}
+
+	for _, op := range resolvedops {
+		h.removeRequestOp(op)
 	}
 }
 
@@ -301,33 +366,6 @@ func (h *handler) handleSubscriptionResult(msg *jsonrpcMessage) {
 	}
 	if h.clientSubs[result.ID] != nil {
 		h.clientSubs[result.ID].deliver(result.Result)
-	}
-}
-
-// handleResponse processes method call responses.
-func (h *handler) handleResponse(msg *jsonrpcMessage) {
-	op := h.respWait[string(msg.ID)]
-	if op == nil {
-		h.log.Debug("Unsolicited RPC response", "reqid", idForLog{msg.ID})
-		return
-	}
-	delete(h.respWait, string(msg.ID))
-	// For normal responses, just forward the reply to Call/BatchCall.
-	if op.sub == nil {
-		op.resp <- msg
-		return
-	}
-	// For subscription responses, start the subscription if the server
-	// indicates success. EthSubscribe gets unblocked in either case through
-	// the op.resp channel.
-	defer close(op.resp)
-	if msg.Error != nil {
-		op.err = msg.Error
-		return
-	}
-	if op.err = json.Unmarshal(msg.Result, &op.sub.subid); op.err == nil {
-		go op.sub.start()
-		h.clientSubs[op.sub.subid] = op.sub
 	}
 }
 

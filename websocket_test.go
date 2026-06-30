@@ -113,6 +113,35 @@ func TestWebsocketLargeCall(t *testing.T) {
 	}
 }
 
+func TestWebsocketConfiguredReadLimit(t *testing.T) {
+	t.Parallel()
+
+	var (
+		srv     = newTestServer()
+		httpsrv = httptest.NewServer(srv.WebsocketHandler([]string{"*"}))
+		wsURL   = "ws:" + strings.TrimPrefix(httpsrv.URL, "http:")
+	)
+	srv.SetWebsocketReadLimit(512)
+	defer srv.Stop()
+	defer httpsrv.Close()
+
+	client, err := DialWebsocket(context.Background(), wsURL, "")
+	if err != nil {
+		t.Fatalf("can't dial: %v", err)
+	}
+	defer client.Close()
+
+	var result echoResult
+	if err := client.Call(&result, "test_echo", "ok", 1); err != nil {
+		t.Fatalf("valid call didn't work: %v", err)
+	}
+
+	err = client.Call(&result, "test_echo", strings.Repeat("x", 1024), 1)
+	if err == nil {
+		t.Fatal("no error for too large call")
+	}
+}
+
 // This test checks that client handles WebSocket ping frames correctly.
 func TestClientWebsocketPing(t *testing.T) {
 	t.Parallel()

@@ -65,7 +65,7 @@ func (s *Server) WebsocketHandler(allowedOrigins []string, option ...WebsocketOp
 			log.Debug("WebSocket upgrade failed", "err", err)
 			return
 		}
-		codec := newWebsocketCodec(conn, r.Host, r.Header, _option.WsPingInterval)
+		codec := newWebsocketCodec(conn, r.Host, r.Header, _option.WsPingInterval, s.wsReadLimit)
 		codecWithCtx := ServerCodecWithContext{codec, r.Context()}
 		s.ServeCodec(codecWithCtx, 0)
 	})
@@ -145,7 +145,7 @@ func DialWebsocketWithDialer(ctx context.Context, endpoint, origin string, diale
 			}
 			return nil, hErr
 		}
-		return newWebsocketCodec(conn, endpoint, header, _option.WsPingInterval), nil
+		return newWebsocketCodec(conn, endpoint, header, _option.WsPingInterval, wsMessageSizeLimit), nil
 	})
 }
 
@@ -189,8 +189,15 @@ type websocketCodec struct {
 	pingReset chan struct{}
 }
 
-func newWebsocketCodec(conn *websocket.Conn, host string, req http.Header, wsPingInterval time.Duration) ServerCodec {
-	conn.SetReadLimit(wsMessageSizeLimit)
+func websocketReadLimit(limit int64) int64 {
+	if limit <= 0 {
+		return wsMessageSizeLimit
+	}
+	return limit
+}
+
+func newWebsocketCodec(conn *websocket.Conn, host string, req http.Header, wsPingInterval time.Duration, readLimit int64) ServerCodec {
+	conn.SetReadLimit(websocketReadLimit(readLimit))
 	conn.SetPongHandler(func(appData string) error {
 		conn.SetReadDeadline(time.Time{})
 		return nil

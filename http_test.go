@@ -98,3 +98,49 @@ func confirmHTTPRequestYieldsStatusCode(t *testing.T, method, contentType, body 
 func TestHTTPResponseWithEmptyGet(t *testing.T) {
 	confirmHTTPRequestYieldsStatusCode(t, http.MethodGet, "", "", http.StatusOK)
 }
+
+func TestHTTPResponseWithConfiguredBodyLimit(t *testing.T) {
+	s := NewServer()
+	s.SetHTTPBodyLimit(64)
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	request, err := http.NewRequest(http.MethodPost, ts.URL, strings.NewReader(strings.Repeat("x", 65)))
+	if err != nil {
+		t.Fatalf("failed to create a valid HTTP request: %v", err)
+	}
+	request.Header.Set("Content-Type", contentType)
+
+	resp, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	confirmStatusCode(t, resp.StatusCode, http.StatusRequestEntityTooLarge)
+}
+
+func TestHTTPResponseWithinConfiguredBodyLimit(t *testing.T) {
+	s := NewServer()
+	s.SetHTTPBodyLimit(128)
+	ts := httptest.NewServer(s)
+	defer ts.Close()
+
+	request, err := http.NewRequest(
+		http.MethodPost,
+		ts.URL,
+		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"rpc_modules"}`),
+	)
+	if err != nil {
+		t.Fatalf("failed to create a valid HTTP request: %v", err)
+	}
+	request.Header.Set("Content-Type", contentType)
+
+	resp, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	confirmStatusCode(t, resp.StatusCode, http.StatusOK)
+}

@@ -19,11 +19,13 @@ package rpc
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"net"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -49,6 +51,132 @@ func TestServerRegisterName(t *testing.T) {
 	if len(svc.callbacks) != wantCallbacks {
 		t.Errorf("Expected %d callbacks for service 'service', got %d", wantCallbacks, len(svc.callbacks))
 	}
+}
+
+func TestNewServerLimitDefaults(t *testing.T) {
+	server := NewServer()
+
+	if server.batchItemLimit != 0 {
+		t.Fatalf("batch item limit: got %d, want 0", server.batchItemLimit)
+	}
+	if server.batchResponseLimit != 0 {
+		t.Fatalf("batch response limit: got %d, want 0", server.batchResponseLimit)
+	}
+	if server.httpBodyLimit != defaultBodyLimit {
+		t.Fatalf("http body limit: got %d, want %d", server.httpBodyLimit, defaultBodyLimit)
+	}
+	if server.wsReadLimit != wsMessageSizeLimit {
+		t.Fatalf("websocket read limit: got %d, want %d", server.wsReadLimit, wsMessageSizeLimit)
+	}
+}
+
+func TestServerSetBatchLimits(t *testing.T) {
+	server := NewServer()
+
+	server.SetBatchLimits(2, 128)
+
+	if server.batchItemLimit != 2 {
+		t.Fatalf("batch item limit: got %d, want 2", server.batchItemLimit)
+	}
+	if server.batchResponseLimit != 128 {
+		t.Fatalf("batch response limit: got %d, want 128", server.batchResponseLimit)
+	}
+}
+
+func TestServerBatchItemLimit(t *testing.T) {
+	server := NewServer()
+	service := new(batchLimitTestService)
+	if err := server.RegisterName("batch", service); err != nil {
+		t.Fatal(err)
+	}
+	server.SetBatchLimits(1, 0)
+
+	resp := serveBatchRequest(t, server, `[
+		{"jsonrpc":"2.0","id":1,"method":"batch_touch"},
+		{"jsonrpc":"2.0","id":2,"method":"batch_touch"}
+	]`)
+
+	if service.calls.Load() != 0 {
+		t.Fatalf("batch call count: got %d, want 0", service.calls.Load())
+	}
+	if len(resp) != 1 {
+		t.Fatalf("response count: got %d, want 1", len(resp))
+	}
+	if string(resp[0].ID) != "1" {
+		t.Fatalf("response id: got %s, want 1", resp[0].ID)
+	}
+	if resp[0].Error == nil {
+		t.Fatalf("response error: got nil, want batch too large")
+	}
+	if resp[0].Error.Code != -32600 {
+		t.Fatalf("response error code: got %d, want -32600", resp[0].Error.Code)
+	}
+	if resp[0].Error.Message != errMsgBatchTooLarge {
+		t.Fatalf("response error message: got %q, want %q", resp[0].Error.Message, errMsgBatchTooLarge)
+	}
+}
+
+func TestServerBatchResponseLimit(t *testing.T) {
+	server := NewServer()
+	if err := server.RegisterName("batch", new(batchLimitTestService)); err != nil {
+		t.Fatal(err)
+	}
+	server.SetBatchLimits(0, 64)
+
+	resp := serveBatchRequest(t, server, `[
+		{"jsonrpc":"2.0","id":1,"method":"batch_large"}
+	]`)
+
+	if len(resp) != 1 {
+		t.Fatalf("response count: got %d, want 1", len(resp))
+	}
+	if string(resp[0].ID) != "1" {
+		t.Fatalf("response id: got %s, want 1", resp[0].ID)
+	}
+	if resp[0].Error == nil {
+		t.Fatalf("response error: got nil, want batch response too large")
+	}
+	if resp[0].Error.Message != errMsgBatchResponseTooLarge {
+		t.Fatalf("response error message: got %q, want %q", resp[0].Error.Message, errMsgBatchResponseTooLarge)
+	}
+}
+
+type batchLimitTestService struct {
+	calls atomic.Int64
+}
+
+func (s *batchLimitTestService) Touch() string {
+	s.calls.Add(1)
+	return "ok"
+}
+
+func (s *batchLimitTestService) Large() string {
+	return strings.Repeat("x", 256)
+}
+
+func serveBatchRequest(t *testing.T, server *Server, request string) []*jsonrpcMessage {
+	t.Helper()
+
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	go server.ServeCodec(NewCodec(serverConn), 0)
+
+	clientConn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.WriteString(clientConn, strings.TrimSpace(request)+"\n"); err != nil {
+		t.Fatalf("write error: %v", err)
+	}
+
+	clientConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	line, err := bufio.NewReader(clientConn).ReadString('\n')
+	if err != nil {
+		t.Fatalf("read error: %v", err)
+	}
+
+	var resp []*jsonrpcMessage
+	if err := json.Unmarshal([]byte(line), &resp); err != nil {
+		t.Fatalf("decode response %q: %v", line, err)
+	}
+	return resp
 }
 
 func TestServer(t *testing.T) {
