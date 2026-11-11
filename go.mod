@@ -1,8 +1,6 @@
 module github.com/openweb3/go-rpc-provider
 
-go 1.23.0
-
-toolchain go1.23.10
+go 1.25.0
 
 require (
 	github.com/davecgh/go-spew v1.1.1
@@ -32,7 +30,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
-	golang.org/x/crypto v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 )
