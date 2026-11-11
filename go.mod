@@ -9,7 +9,7 @@ require (
 	github.com/deckarep/golang-set v1.8.0
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/fatih/color v1.16.0
-	github.com/gorilla/websocket v1.5.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/mcuadros/go-defaults v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/valyala/fasthttp v1.40.0
